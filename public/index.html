@@ -93,22 +93,20 @@
   .reachability-dot.reachable { background: var(--bs-success); }
   .reachability-dot.unreachable { background: var(--bs-danger); }
 
-  .card-dropdown { position: relative; }
-  .card-dropdown-menu {
+  #card-dropdown-menu {
     display: none;
-    position: absolute; right: 0; top: 100%; margin-top: 4px;
-    z-index: 10; min-width: 110px;
+    position: fixed; z-index: 1060; min-width: 110px;
     background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
     border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     overflow: hidden;
   }
-  .card-dropdown-menu.show { display: block; }
-  .card-dropdown-menu button {
+  #card-dropdown-menu.show { display: block; }
+  #card-dropdown-menu button {
     display: block; width: 100%; text-align: left; border: none; background: none;
     padding: 8px 12px; font-size: 14px; color: var(--bs-body-color);
   }
-  .card-dropdown-menu button:hover { background: var(--bs-tertiary-bg); }
-  .card-dropdown-menu button.text-danger:hover { background: var(--bs-danger); color: white; }
+  #card-dropdown-menu button:hover { background: var(--bs-tertiary-bg); }
+  #card-dropdown-menu button.text-danger:hover { background: var(--bs-danger); color: white; }
 </style>
 </head>
 <body>
@@ -165,6 +163,11 @@
 </div>
 
 <div id="sessions-container"></div>
+
+<div id="card-dropdown-menu">
+  <button id="card-dropdown-edit-btn">Edit</button>
+  <button id="card-dropdown-delete-btn" class="text-danger">Delete</button>
+</div>
 
 <div class="app-overlay" id="modal-backdrop">
   <div class="card" style="width: 420px; max-width: 90vw;">
@@ -546,13 +549,7 @@ function renderConnections() {
           ${tagBadges ? `<div class="mb-2">${tagBadges}</div>` : ''}
           <div class="d-flex gap-2">
             <button class="btn btn-outline-light btn-sm flex-grow-1" data-connect="${c.id}" data-name="${escapeHtml(c.name)}">Connect</button>
-            <div class="card-dropdown">
-              <button class="btn btn-outline-light btn-sm" data-dropdown-toggle="${c.id}" title="More options">⋮</button>
-              <div class="card-dropdown-menu" data-dropdown-menu="${c.id}">
-                <button data-edit="${c.id}">Edit</button>
-                <button class="text-danger" data-delete="${c.id}">Delete</button>
-              </div>
-            </div>
+            <button class="btn btn-outline-light btn-sm" data-dropdown-toggle="${c.id}" title="More options">⋮</button>
           </div>
         </div>
       </div>`;
@@ -681,17 +678,35 @@ function closeModal() { modalBackdrop.classList.remove('open'); }
 document.getElementById('add-btn').addEventListener('click', () => openModal(null));
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 
+const cardDropdownMenu = document.getElementById('card-dropdown-menu');
+let cardDropdownConnectionId = null;
+
+function closeCardDropdown() {
+  cardDropdownMenu.classList.remove('show');
+  cardDropdownConnectionId = null;
+}
+
+function openCardDropdown(triggerButton, connectionId) {
+  cardDropdownConnectionId = connectionId;
+  const rect = triggerButton.getBoundingClientRect();
+  // Fixed positioning is relative to the viewport, not any scrolling
+  // ancestor - this is what actually escapes the grid container's
+  // overflow-y:auto clipping, rather than being nested inside a card that
+  // the container can clip regardless of the dropdown's own z-index.
+  cardDropdownMenu.style.top = `${rect.bottom + 4}px`;
+  cardDropdownMenu.style.left = 'auto';
+  cardDropdownMenu.style.right = `${window.innerWidth - rect.right}px`;
+  cardDropdownMenu.classList.add('show');
+}
+
 rowsEl.addEventListener('click', async (e) => {
   const connectId = e.target.getAttribute('data-connect');
-  const editId = e.target.getAttribute('data-edit');
-  const deleteId = e.target.getAttribute('data-delete');
   const dropdownToggleId = e.target.getAttribute('data-dropdown-toggle');
 
   if (dropdownToggleId) {
-    const menu = rowsEl.querySelector(`[data-dropdown-menu="${dropdownToggleId}"]`);
-    const wasOpen = menu.classList.contains('show');
-    closeAllCardDropdowns();
-    if (!wasOpen) menu.classList.add('show');
+    const wasOpenForThisCard = cardDropdownMenu.classList.contains('show') && cardDropdownConnectionId === dropdownToggleId;
+    closeCardDropdown();
+    if (!wasOpenForThisCard) openCardDropdown(e.target, dropdownToggleId);
     return;
   }
 
@@ -699,27 +714,35 @@ rowsEl.addEventListener('click', async (e) => {
     const name = e.target.getAttribute('data-name');
     openOrFocusSession(connectId, name);
   }
-  if (editId) {
-    closeAllCardDropdowns();
-    const res = await fetch(`/api/connections/${editId}`);
-    openModal(await res.json());
-  }
-  if (deleteId) {
-    closeAllCardDropdowns();
-    if (!confirm('Delete this connection?')) return;
-    await fetch(`/api/connections/${deleteId}`, { method: 'DELETE' });
-    loadConnections();
-  }
 });
 
-function closeAllCardDropdowns() {
-  rowsEl.querySelectorAll('.card-dropdown-menu.show').forEach((m) => m.classList.remove('show'));
-}
+document.getElementById('card-dropdown-edit-btn').addEventListener('click', async () => {
+  const id = cardDropdownConnectionId;
+  closeCardDropdown();
+  const res = await fetch(`/api/connections/${id}`);
+  openModal(await res.json());
+});
 
-// Closes any open card dropdown when clicking anywhere outside it.
+document.getElementById('card-dropdown-delete-btn').addEventListener('click', async () => {
+  const id = cardDropdownConnectionId;
+  closeCardDropdown();
+  if (!confirm('Delete this connection?')) return;
+  await fetch(`/api/connections/${id}`, { method: 'DELETE' });
+  loadConnections();
+});
+
+// Closes the dropdown when clicking anywhere outside it (or its trigger).
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.card-dropdown')) closeAllCardDropdowns();
+  if (!e.target.closest('#card-dropdown-menu') && !e.target.matches('[data-dropdown-toggle]')) {
+    closeCardDropdown();
+  }
 });
+
+// Reposition (or just close, simplest and safest) if the window resizes or
+// the grid scrolls while the dropdown is open, since its fixed coordinates
+// were calculated for a specific moment in time.
+document.getElementById('grid-scroll-container').addEventListener('scroll', closeCardDropdown);
+window.addEventListener('resize', closeCardDropdown);
 
 function resolveHostname(raw) {
   const trimmed = raw.trim();
