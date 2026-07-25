@@ -1,0 +1,43 @@
+services:
+  guacd:
+    image: guacamole/guacd:1.5.5
+    container_name: rdp-webapp-guacd
+    restart: unless-stopped
+    volumes:
+      - drive-data:/drive-data
+    networks:
+      - internal
+
+  webapp:
+    build: .
+    container_name: rdp-webapp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - GUACD_HOST=guacd
+      - GUACD_PORT=4822
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - ./data:/app/data
+      - drive-data:/app/drive-data
+    depends_on:
+      - guacd
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  # A real Docker-managed volume (genuine Linux filesystem under the hood),
+  # not a bind mount to the Windows host - NTFS has no real Unix permission
+  # bits, so explicit chmod calls on a Windows-hosted bind mount can silently
+  # fail to persist, which is exactly what caused "File open refused" when
+  # writing into the mapped drive from inside an RDP session. Both users
+  # never need to browse this folder directly from Windows Explorer anyway -
+  # the app's own upload/download panel and the RDP session's mapped drive
+  # are the only two ways this data is ever accessed.
+  drive-data:

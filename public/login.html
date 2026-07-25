@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<title>Sign in — RDP Web App</title>
+<link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css" />
+</head>
+<body class="d-flex align-items-center justify-content-center vh-100">
+
+  <div class="card shadow" style="width: 340px;">
+    <div class="card-body">
+
+      <form id="login-form">
+        <h2 class="card-title mb-3">Sign in</h2>
+        <div class="mb-3">
+          <label for="login-username" class="form-label">Username</label>
+          <input id="login-username" class="form-control" autocomplete="username" required />
+        </div>
+        <div class="mb-3">
+          <label for="login-password" class="form-label">Password</label>
+          <input id="login-password" type="password" class="form-control" autocomplete="current-password" required />
+        </div>
+        <div class="text-danger small mb-2" id="login-error"></div>
+        <button type="submit" class="btn btn-primary w-100">Sign in</button>
+        <div class="text-body-secondary small text-center mt-3">
+          No account yet? <a href="#" id="show-register">Register</a>
+        </div>
+      </form>
+
+      <form id="register-form" class="d-none">
+        <h2 class="card-title mb-3">Create account</h2>
+        <div class="mb-3">
+          <label for="register-username" class="form-label">Username</label>
+          <input id="register-username" class="form-control" autocomplete="username" required minlength="3" />
+        </div>
+        <div class="mb-3">
+          <label for="register-password" class="form-label">Password</label>
+          <input id="register-password" type="password" class="form-control" autocomplete="new-password" required minlength="6" />
+        </div>
+        <div class="mb-3">
+          <label for="register-password-confirm" class="form-label">Confirm password</label>
+          <input id="register-password-confirm" type="password" class="form-control" autocomplete="new-password" required minlength="6" />
+        </div>
+        <div class="text-danger small mb-2" id="register-error"></div>
+        <button type="submit" class="btn btn-primary w-100">Create account</button>
+        <div class="text-body-secondary small text-center mt-3">
+          Already have an account? <a href="#" id="show-login">Sign in</a>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <script>
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const loginError = document.getElementById('login-error');
+    const registerError = document.getElementById('register-error');
+
+    document.getElementById('show-register').addEventListener('click', (e) => {
+      e.preventDefault();
+      loginForm.classList.add('d-none');
+      registerForm.classList.remove('d-none');
+    });
+    document.getElementById('show-login').addEventListener('click', (e) => {
+      e.preventDefault();
+      registerForm.classList.add('d-none');
+      loginForm.classList.remove('d-none');
+    });
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loginError.textContent = '';
+      const username = document.getElementById('login-username').value;
+      const password = document.getElementById('login-password').value;
+
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (res.ok) {
+        window.location.href = '/';
+      } else {
+        const data = await res.json().catch(() => ({}));
+        loginError.textContent = data.error || 'Login failed';
+      }
+    });
+
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      registerError.textContent = '';
+      const username = document.getElementById('register-username').value;
+      const password = document.getElementById('register-password').value;
+      const confirm = document.getElementById('register-password-confirm').value;
+
+      if (password !== confirm) {
+        registerError.textContent = 'Passwords do not match';
+        return;
+      }
+
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (res.ok) {
+        window.location.href = '/';
+      } else {
+        const data = await res.json().catch(() => ({}));
+        registerError.textContent = data.error || 'Registration failed';
+      }
+    });
+  </script>
+</body>
+</html>

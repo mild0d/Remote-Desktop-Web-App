@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<title>RDP Web App</title>
+<link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css" />
+<style>
+  /* Bespoke UI (tab bar, multi-session panes) and functionally-critical
+     rules not covered by Bootstrap. Everything else in this app uses
+     Bootstrap classes directly. */
+
+  #tab-bar {
+    display: flex; align-items: stretch; justify-content: space-between;
+    border-bottom: 1px solid var(--bs-border-color); height: 42px;
+  }
+  #tabs-list {
+    display: flex; align-items: stretch; overflow-x: auto;
+    flex: 1 1 auto; min-width: 0; /* lets this shrink instead of pushing session-controls off-screen */
+  }
+  .tab-btn {
+    display: flex; align-items: center; gap: 8px;
+    background: transparent; border: none; border-right: 1px solid var(--bs-border-color);
+    color: var(--bs-secondary-color); padding: 0 14px; font-size: 13px; border-radius: 0;
+    white-space: nowrap; cursor: pointer;
+    flex-shrink: 1; min-width: 60px; max-width: 200px; overflow: hidden;
+  }
+  .tab-btn .tab-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .tab-btn:hover { background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+  .tab-btn.active-tab { color: var(--bs-body-color); background: var(--bs-tertiary-bg); box-shadow: inset 0 -2px 0 var(--bs-primary); }
+  .tab-close {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 4px; color: var(--bs-secondary-color);
+    flex-shrink: 0;
+  }
+  .tab-close:hover { background: var(--bs-danger); color: white; }
+
+  #session-controls { display: none; align-items: center; gap: 12px; padding: 0 16px; flex-shrink: 0; }
+  #session-controls.controls-visible { display: flex; }
+  #active-status { font-size: 13px; color: var(--bs-secondary-color); white-space: nowrap; }
+
+  .session-pane { display: none; height: calc(100vh - 42px); }
+  .session-pane.active-pane { display: flex; flex-direction: column; }
+  /* position:relative + z-index:0 here establishes a CSS stacking context -
+     required so Guacamole's internal negative-z-index canvas layer renders
+     correctly instead of disappearing behind the rest of the page. */
+  .display-area { flex: 1; overflow: hidden; background: #000; position: relative; z-index: 0; }
+  .display-area canvas, .display-area > div { display: block; }
+
+  /* Custom overlay/panel for our own modals (deliberately not using
+     Bootstrap's .modal/.modal-backdrop/.modal-footer class names, to avoid
+     colliding with Bootstrap's own built-in behavior for those). */
+  .app-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: none; justify-content: center; align-items: flex-start;
+    overflow-y: auto; padding: 40px 16px; z-index: 1050;
+  }
+  .app-overlay.open { display: flex; }
+  .app-overlay .card { max-height: 85vh; display: flex; flex-direction: column; }
+  .app-overlay .card-body { overflow-y: auto; }
+  .app-panel-footer {
+    display: flex; justify-content: flex-end; gap: 8px;
+    position: sticky; bottom: -1rem; margin: 20px -1rem -1rem; padding: 12px 1rem;
+    background: var(--bs-body-bg); border-top: 1px solid var(--bs-border-color);
+  }
+
+  /* Keeps the sort/add-connection toolbar visible while scrolling through
+     a long grid of connection cards, using the same bounded-scroll-
+     container pattern as the session display area above - sticky
+     positioning against whole-page scroll is inconsistent across
+     browsers, but reliable against an explicit overflow-y:auto ancestor. */
+  .sticky-toolbar {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bs-body-bg);
+    padding: 4px 0 12px; margin-bottom: 12px;
+    border-bottom: 1px solid var(--bs-border-color);
+  }
+
+  .thumbnail-box {
+    aspect-ratio: 16 / 10; background: var(--bs-tertiary-bg);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; border-bottom: 1px solid var(--bs-border-color);
+  }
+  .thumbnail-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumbnail-placeholder { display: none; font-size: 48px; align-items: center; justify-content: center; width: 100%; height: 100%; }
+
+  .reachability-dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--bs-secondary-color); /* neutral color while checking */
+    margin-right: 2px; vertical-align: middle;
+  }
+  .reachability-dot.reachable { background: var(--bs-success); }
+  .reachability-dot.unreachable { background: var(--bs-danger); }
+</style>
+</head>
+<body>
+
+<!-- Dedicated element kept as a secondary fallback for native paste events
+     (e.g. right-click > Paste). The primary mechanism is the document-level
+     Ctrl+V handler below, which doesn't depend on this having focus. -->
+<textarea id="clipboard-sink" style="position:fixed; top:-9999px; left:-9999px; width:1px; height:1px; opacity:0;"></textarea>
+
+<div id="tab-bar">
+  <div id="tabs-list">
+    <button class="tab-btn active-tab" id="list-tab" data-tab="list">☰ Connections</button>
+  </div>
+  <div id="session-controls">
+    <span id="active-status">Connecting…</span>
+    <button class="btn btn-outline-light btn-sm" id="files-btn">📁 Files</button>
+    <button class="btn btn-outline-light btn-sm" id="shared-back-btn">← Back to list</button>
+    <button class="btn btn-danger btn-sm" id="shared-disconnect-btn">Disconnect</button>
+  </div>
+</div>
+
+<div id="list-view">
+  <header class="d-flex justify-content-between align-items-center p-3 border-bottom">
+    <h1 class="h5 mb-0">RDP Connections</h1>
+    <div class="d-flex align-items-center gap-3">
+      <span id="whoami" class="small" style="cursor:pointer; text-decoration:underline dotted;" title="Change password"></span>
+      <button class="btn btn-outline-light btn-sm" id="settings-btn" title="Default RDP credentials">⚙️ Settings</button>
+      <button class="btn btn-outline-light btn-sm d-none" id="admin-btn" title="Admin panel">🛡️ Admin</button>
+      <button class="btn btn-outline-light btn-sm" id="logout-btn">Log out</button>
+    </div>
+  </header>
+  <main class="container-fluid py-4" style="max-width: 1400px;">
+    <div id="grid-scroll-container" style="max-height: calc(100vh - 140px); overflow-y: auto; overflow-x: hidden;">
+      <div class="sticky-toolbar">
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-light btn-sm" id="sort-name-header">Sort by name <span id="sort-arrow">▲</span></button>
+            <input type="search" class="form-control form-control-sm" id="search-input" placeholder="Search connections..." style="width: 220px;" />
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-light btn-sm" id="export-btn">⬇️ Export</button>
+            <button class="btn btn-outline-light btn-sm" id="import-btn">⬆️ Import</button>
+            <input type="file" id="import-file-input" accept="application/json" class="d-none" />
+            <button class="btn btn-primary btn-sm" id="add-btn">+ Add connection</button>
+          </div>
+        </div>
+        <div id="tag-chips" class="d-flex flex-wrap gap-2 mt-2 d-none"></div>
+      </div>
+      <div id="rows" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-xl-4 g-3"></div>
+      <div class="text-secondary small py-3 d-none" id="empty-hint">No saved connections yet. Click "+ Add connection" to create one.</div>
+    </div>
+  </main>
+</div>
+
+<div id="sessions-container"></div>
+
+<div class="app-overlay" id="modal-backdrop">
+  <div class="card" style="width: 420px; max-width: 90vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title" id="modal-title">Add connection</h2>
+      <form id="conn-form">
+        <input type="hidden" id="conn-id" />
+        <div class="mb-3">
+          <label class="form-label">Name</label>
+          <input id="f-name" class="form-control" required />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Icon</label>
+          <select id="f-icon" class="form-select">
+            <option value="🖥️">🖥️ Workstation</option>
+            <option value="🗄️">🗄️ File / domain server</option>
+            <option value="🏢">🏢 Domain controller</option>
+            <option value="🛡️">🛡️ Security / firewall</option>
+            <option value="💾">💾 Database</option>
+            <option value="🌐">🌐 Web server</option>
+            <option value="☁️">☁️ Cloud</option>
+            <option value="📧">📧 Mail server</option>
+            <option value="🖨️">🖨️ Print server</option>
+            <option value="📀">📀 Backup server</option>
+            <option value="📊">📊 Monitoring / reporting</option>
+            <option value="🧪">🧪 Lab / test</option>
+            <option value="⚙️">⚙️ Utility / service</option>
+            <option value="🔒">🔒 Restricted / locked down</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Hostname / IP</label>
+          <input id="f-hostname" class="form-control" required placeholder="e.g. server01" />
+          <div class="form-text">Short names get your default hostname suffix appended automatically (configurable in ⚙️ Settings). Enter a full FQDN or IP address as-is to skip this.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Port</label>
+          <input id="f-port" class="form-control" value="3389" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Username</label>
+          <input id="f-username" class="form-control" placeholder="Leave blank to use your default credentials" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input id="f-password" type="password" class="form-control" placeholder="Leave blank to keep existing (or use default if unset)" />
+          <div class="form-text">Set your default username/password once via the ⚙️ Settings button - connections without their own credentials will use those automatically.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Security mode</label>
+          <select id="f-security" class="form-select">
+            <option value="any">Any (negotiate)</option>
+            <option value="nla">NLA</option>
+            <option value="tls">TLS</option>
+            <option value="rdp">RDP legacy</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Color depth (lower = better compatibility with some servers, e.g. black-screen-after-login issues)</label>
+          <select id="f-color-depth" class="form-select">
+            <option value="16">16-bit (best compatibility)</option>
+            <option value="24">24-bit</option>
+            <option value="32">32-bit (best quality)</option>
+          </select>
+        </div>
+        <div class="form-check mb-3">
+          <input type="checkbox" class="form-check-input" id="f-ignore-cert" checked />
+          <label class="form-check-label" for="f-ignore-cert">Ignore server certificate errors</label>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Tags</label>
+          <input id="f-tags" class="form-control" placeholder="e.g. ATL, AD, Production" />
+          <div class="form-text">Comma-separated. Click any tag above the connections grid to filter by it.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Notes</label>
+          <textarea id="f-notes" class="form-control" rows="3" placeholder="e.g. maintenance window Tuesdays 2am"></textarea>
+        </div>
+        <div class="text-danger small mb-2" id="form-error"></div>
+        <div class="app-panel-footer">
+          <button type="button" class="btn btn-outline-light" id="cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="password-modal-backdrop">
+  <div class="card" style="width: 420px; max-width: 90vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Change password</h2>
+      <form id="password-form">
+        <div class="mb-3">
+          <label class="form-label">Current password</label>
+          <input id="pw-current" type="password" class="form-control" autocomplete="current-password" required />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">New password</label>
+          <input id="pw-new" type="password" class="form-control" autocomplete="new-password" required minlength="6" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Confirm new password</label>
+          <input id="pw-confirm" type="password" class="form-control" autocomplete="new-password" required minlength="6" />
+        </div>
+        <div class="text-danger small mb-2" id="password-form-error"></div>
+        <div class="app-panel-footer">
+          <button type="button" class="btn btn-outline-light" id="password-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="settings-modal-backdrop">
+  <div class="card" style="width: 420px; max-width: 90vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Default RDP credentials</h2>
+      <p class="text-secondary small">
+        Saved here once, these are used automatically for any connection whose
+        own username/password fields are left blank - so you don't have to
+        retype the same admin account for every server. Individual
+        connections can still override this with their own credentials.
+      </p>
+      <form id="settings-form">
+        <div class="mb-3">
+          <label class="form-label">Default username</label>
+          <input id="settings-username" class="form-control" placeholder="e.g. admin.svc" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Default password</label>
+          <input id="settings-password" type="password" class="form-control" placeholder="Leave blank to keep existing" />
+          <div class="form-text" id="settings-password-status"></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Hostname suffix</label>
+          <input id="settings-hostname-suffix" class="form-control" placeholder="e.g. example.local" />
+          <div class="form-text">Auto-appended to short hostnames when adding a connection (e.g. typing <code>server01</code> becomes <code>server01.example.local</code>). Leave blank to disable this.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Default NetBIOS domain</label>
+          <input id="settings-netbios-domain" class="form-control" placeholder="e.g. example" />
+          <div class="form-text">Pre-fills the Domain field whenever you add a new connection.</div>
+        </div>
+        <div class="text-danger small mb-2" id="settings-form-error"></div>
+        <div class="app-panel-footer">
+          <button type="button" class="btn btn-outline-light" id="settings-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="admin-modal-backdrop">
+  <div class="card" style="width: 640px; max-width: 92vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Admin panel</h2>
+
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="admin-registration-toggle" />
+        <label class="form-check-label" for="admin-registration-toggle">Allow new users to register</label>
+      </div>
+
+      <div class="text-danger small mb-2" id="admin-error"></div>
+
+      <table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr></thead>
+        <tbody id="admin-users-rows"></tbody>
+      </table>
+
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="admin-active-sessions-btn">🖥️ Active sessions</button>
+        <button type="button" class="btn btn-outline-light" id="admin-audit-log-btn">📋 View audit log</button>
+        <button type="button" class="btn btn-outline-light" id="admin-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="active-sessions-modal-backdrop">
+  <div class="card" style="width: 700px; max-width: 94vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Active sessions</h2>
+      <p class="text-secondary small">
+        RDP sessions currently open across all users, right now.
+      </p>
+      <div class="text-danger small mb-2" id="active-sessions-error"></div>
+      <div style="max-height: 60vh; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>User</th><th>Connection</th><th>Host</th><th>Started</th><th></th></tr></thead>
+          <tbody id="active-sessions-rows"></tbody>
+        </table>
+      </div>
+      <div class="text-secondary small py-3 d-none" id="active-sessions-empty-hint">No active sessions right now.</div>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="active-sessions-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="audit-log-modal-backdrop">
+  <div class="card" style="width: 700px; max-width: 94vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Audit log</h2>
+      <p class="text-secondary small">
+        Every RDP connection attempt, most recent first. Kept to the most
+        recent 5000 entries.
+      </p>
+      <div style="max-height: 60vh; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>When</th><th>User</th><th>Connection</th><th>Host</th></tr></thead>
+          <tbody id="audit-log-rows"></tbody>
+        </table>
+      </div>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="audit-log-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="files-modal-backdrop">
+  <div class="card" style="width: 520px; max-width: 90vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Shared drive</h2>
+      <p class="text-secondary small">
+        This folder is mapped as a drive inside your RDP sessions. Upload files here to make
+        them available inside the session, or copy files into the mapped drive from inside the
+        session to download them here.
+      </p>
+      <div class="mb-3">
+        <input type="file" id="file-upload-input" class="form-control" multiple />
+      </div>
+      <div class="text-danger small mb-2" id="files-error"></div>
+      <table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Name</th><th>Size</th><th></th></tr></thead>
+        <tbody id="files-rows"></tbody>
+      </table>
+      <div class="text-secondary small py-3 d-none" id="files-empty-hint">No files yet.</div>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="files-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import Guacamole from '/vendor/guacamole-common-js/guacamole-common.min.js';
+
+const rowsEl = document.getElementById('rows');
+const tagChipsEl = document.getElementById('tag-chips');
+const emptyHint = document.getElementById('empty-hint');
+const clipboardSink = document.getElementById('clipboard-sink');
+const modalBackdrop = document.getElementById('modal-backdrop');
+const form = document.getElementById('conn-form');
+const formError = document.getElementById('form-error');
+const modalTitle = document.getElementById('modal-title');
+const listView = document.getElementById('list-view');
+const tabsList = document.getElementById('tabs-list');
+const listTab = document.getElementById('list-tab');
+const sessionsContainer = document.getElementById('sessions-container');
+const sessionControls = document.getElementById('session-controls');
+const activeStatusEl = document.getElementById('active-status');
+const sharedBackBtn = document.getElementById('shared-back-btn');
+const sharedDisconnectBtn = document.getElementById('shared-disconnect-btn');
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+let currentConns = [];
+let sortAscending = true;
+let searchQuery = '';
+let selectedTag = null;
+
+function renderTagChips() {
+  const allTags = new Set();
+  currentConns.forEach((c) => (c.tags || []).forEach((t) => allTags.add(t)));
+
+  tagChipsEl.innerHTML = '';
+  if (allTags.size === 0) {
+    tagChipsEl.classList.add('d-none');
+    return;
+  }
+  tagChipsEl.classList.remove('d-none');
+
+  Array.from(allTags).sort().forEach((tag) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'btn btn-sm ' + (tag === selectedTag ? 'btn-primary' : 'btn-outline-light');
+    chip.textContent = tag;
+    chip.addEventListener('click', () => {
+      selectedTag = selectedTag === tag ? null : tag; // click again to clear
+      renderConnections();
+    });
+    tagChipsEl.appendChild(chip);
+  });
+}
+
+function renderConnections() {
+  const filtered = currentConns.filter((c) => {
+    if (selectedTag && !(c.tags || []).includes(selectedTag)) return false;
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.hostname || '').toLowerCase().includes(q) ||
+      (c.username || '').toLowerCase().includes(q)
+    );
+  });
+
+  const sorted = [...filtered].sort((a, b) =>
+    sortAscending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+  );
+
+  rowsEl.innerHTML = '';
+  renderTagChips();
+
+  if (currentConns.length === 0) {
+    emptyHint.textContent = 'No saved connections yet. Click "+ Add connection" to create one.';
+    emptyHint.classList.remove('d-none');
+  } else if (sorted.length === 0) {
+    emptyHint.textContent = 'No connections match your search/filter.';
+    emptyHint.classList.remove('d-none');
+  } else {
+    emptyHint.classList.add('d-none');
+  }
+
+  sorted.forEach((c) => {
+    const col = document.createElement('div');
+    col.className = 'col';
+    const tagBadges = (c.tags || [])
+      .map((t) => `<span class="badge text-bg-secondary me-1">${escapeHtml(t)}</span>`)
+      .join('');
+    const notesIcon = c.notes
+      ? `<span title="${escapeHtml(c.notes)}" style="cursor:help;">📝</span>`
+      : '';
+    // Cache-busting query param so a freshly captured screenshot doesn't
+    // get served from the browser's own image cache for this <img> tag.
+    col.innerHTML = `
+      <div class="card h-100">
+        <div class="thumbnail-box">
+          <img src="/api/connections/${c.id}/thumbnail?t=${Date.now()}"
+               onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+          <div class="thumbnail-placeholder">${c.icon || '🖥️'}</div>
+        </div>
+        <div class="card-body">
+          <h6 class="card-title mb-1">
+            <span class="reachability-dot" data-reachability-id="${c.id}" title="Checking..."></span>
+            ${c.icon || '🖥️'} ${escapeHtml(c.name)} ${notesIcon}
+          </h6>
+          <div class="text-secondary small mb-2">${escapeHtml(c.hostname)}:${c.port}${c.username ? ' · ' + escapeHtml(c.username) : ''}</div>
+          ${tagBadges ? `<div class="mb-2">${tagBadges}</div>` : ''}
+          <div class="btn-group btn-group-sm w-100">
+            <button class="btn btn-outline-light" data-connect="${c.id}" data-name="${escapeHtml(c.name)}">Connect</button>
+            <button class="btn btn-outline-light" data-edit="${c.id}">Edit</button>
+            <button class="btn btn-outline-light" data-delete="${c.id}">Delete</button>
+          </div>
+        </div>
+      </div>`;
+    rowsEl.appendChild(col);
+  });
+  document.getElementById('sort-arrow').textContent = sortAscending ? '▲' : '▼';
+}
+
+document.getElementById('search-input').addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  renderConnections();
+});
+
+document.getElementById('sort-name-header').addEventListener('click', () => {
+  sortAscending = !sortAscending;
+  renderConnections();
+});
+
+async function loadConnections() {
+  const res = await fetch('/api/connections');
+  if (res.status === 401) return (window.location.href = '/login.html');
+  currentConns = await res.json();
+  renderConnections();
+  loadReachability();
+}
+
+// Checks all connections' reachability in one request (server does the
+// actual TCP checks in parallel) and colors in each card's dot once the
+// results come back - doesn't block rendering the list itself.
+async function loadReachability() {
+  try {
+    const res = await fetch('/api/connections/reachability');
+    if (!res.ok) return;
+    const results = await res.json();
+    Object.entries(results).forEach(([id, reachable]) => {
+      const dot = document.querySelector(`.reachability-dot[data-reachability-id="${id}"]`);
+      if (!dot) return;
+      dot.classList.remove('reachable', 'unreachable');
+      dot.classList.add(reachable ? 'reachable' : 'unreachable');
+      dot.title = reachable ? 'Reachable' : 'Not reachable';
+    });
+  } catch (err) {
+    console.warn('Failed to check reachability', err);
+  }
+}
+
+// --- Export / Import ---
+// Export is a plain navigation - the browser sends the session cookie
+// automatically for a same-origin request, and the server's
+// Content-Disposition header triggers a real file download rather than
+// navigating away from the page.
+document.getElementById('export-btn').addEventListener('click', () => {
+  window.location.href = '/api/connections/export';
+});
+
+const importFileInput = document.getElementById('import-file-input');
+document.getElementById('import-btn').addEventListener('click', () => {
+  importFileInput.click();
+});
+
+importFileInput.addEventListener('change', async () => {
+  const file = importFileInput.files[0];
+  importFileInput.value = '';
+  if (!file) return;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (err) {
+    alert('That file is not valid JSON.');
+    return;
+  }
+
+  const res = await fetch('/api/connections/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(parsed),
+  });
+
+  if (res.ok) {
+    const result = await res.json();
+    let message = `Imported ${result.imported} connection(s).`;
+    if (result.skipped > 0) {
+      message += `\nSkipped ${result.skipped}:\n${result.errors.join('\n')}`;
+    }
+    alert(message);
+    loadConnections();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    alert(data.error || 'Import failed.');
+  }
+});
+
+function openModal(existing) {
+  form.reset();
+  document.getElementById('conn-id').value = existing ? existing.id : '';
+  document.getElementById('f-name').value = existing ? existing.name : '';
+  document.getElementById('f-icon').value = existing ? existing.icon || '🖥️' : '🖥️';
+  document.getElementById('f-hostname').value = existing ? existing.hostname : '';
+  document.getElementById('f-port').value = existing ? existing.port : '3389';
+  document.getElementById('f-username').value = existing ? existing.username || '' : '';
+  document.getElementById('f-password').value = '';
+  document.getElementById('f-security').value = existing ? existing.security || 'any' : 'any';
+  document.getElementById('f-color-depth').value = existing ? existing.color_depth || '16' : '16';
+  document.getElementById('f-ignore-cert').checked = existing ? !!existing.ignore_cert : true;
+  document.getElementById('f-tags').value = existing && Array.isArray(existing.tags) ? existing.tags.join(', ') : '';
+  document.getElementById('f-notes').value = existing ? existing.notes || '' : '';
+  modalTitle.textContent = existing ? 'Edit connection' : 'Add connection';
+  formError.textContent = '';
+  modalBackdrop.classList.add('open');
+}
+function closeModal() { modalBackdrop.classList.remove('open'); }
+
+document.getElementById('add-btn').addEventListener('click', () => openModal(null));
+document.getElementById('cancel-btn').addEventListener('click', closeModal);
+
+rowsEl.addEventListener('click', async (e) => {
+  const connectId = e.target.getAttribute('data-connect');
+  const editId = e.target.getAttribute('data-edit');
+  const deleteId = e.target.getAttribute('data-delete');
+
+  if (connectId) {
+    const name = e.target.getAttribute('data-name');
+    openOrFocusSession(connectId, name);
+  }
+  if (editId) {
+    const res = await fetch(`/api/connections/${editId}`);
+    openModal(await res.json());
+  }
+  if (deleteId) {
+    if (!confirm('Delete this connection?')) return;
+    await fetch(`/api/connections/${deleteId}`, { method: 'DELETE' });
+    loadConnections();
+  }
+});
+
+function resolveHostname(raw) {
+  const trimmed = raw.trim();
+  // Anything with a dot is assumed already complete - a full FQDN or a
+  // dotted IPv4 address - so only bare/short names get the suffix appended.
+  if (!trimmed || trimmed.includes('.')) return trimmed;
+  if (!userHostnameSuffix) return trimmed; // no suffix configured - leave as-is
+  return `${trimmed}.${userHostnameSuffix}`;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  formError.textContent = '';
+  const id = document.getElementById('conn-id').value;
+  const payload = {
+    name: document.getElementById('f-name').value,
+    icon: document.getElementById('f-icon').value,
+    hostname: resolveHostname(document.getElementById('f-hostname').value),
+    port: parseInt(document.getElementById('f-port').value, 10) || 3389,
+    username: document.getElementById('f-username').value,
+    password: document.getElementById('f-password').value,
+    security: document.getElementById('f-security').value,
+    color_depth: document.getElementById('f-color-depth').value,
+    ignore_cert: document.getElementById('f-ignore-cert').checked,
+    tags: document.getElementById('f-tags').value.split(',').map((t) => t.trim()).filter(Boolean),
+    notes: document.getElementById('f-notes').value,
+  };
+  const res = await fetch(id ? `/api/connections/${id}` : '/api/connections', {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    closeModal();
+    loadConnections();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    formError.textContent = data.error || 'Failed to save connection';
+  }
+});
+
+// --- Multi-session tab management ---
+// Sessions keep running in the background when you switch away from their
+// tab - only the DOM pane is hidden (display:none), the Guacamole client
+// and its websocket tunnel stay alive and keep receiving/rendering updates.
+const sessions = new Map(); // key: connection id (string) -> { name, client, paneEl, tabEl, displayArea, state, statusText }
+let activeKey = 'list';
+
+const STATE_NAMES = ['Idle', 'Connecting', 'Waiting for data', 'Connected', 'Disconnecting', 'Disconnected'];
+
+function fitSessionDisplay(session) {
+  if (!session.client || !session.remoteWidth || !session.remoteHeight) return;
+  const availWidth = session.displayArea.clientWidth;
+  const availHeight = session.displayArea.clientHeight;
+  if (!availWidth || !availHeight) return;
+  // Fit whatever resolution the server actually negotiated (which can be
+  // rounded up slightly from what we requested) into the space we actually
+  // have, via Guacamole's own CSS-transform-based scale() - more reliable
+  // than trying to request a pixel-perfect resolution up front.
+  const scale = Math.min(availWidth / session.remoteWidth, availHeight / session.remoteHeight);
+  session.client.getDisplay().scale(scale);
+}
+
+function requestResize(session) {
+  if (!session.client) return;
+  const width = session.displayArea.clientWidth;
+  const height = session.displayArea.clientHeight;
+  if (!width || !height) return;
+  // Asks the RDP server to actually change its desktop resolution to match
+  // (relies on resize-method: display-update set server-side). This is
+  // different from fitSessionDisplay(), which only visually scales the
+  // existing content - sendSize can eliminate letterboxing entirely once
+  // the server responds, rather than just shrinking/stretching what's
+  // already there to fit within a mismatched aspect ratio.
+  session.client.sendSize(width, height);
+}
+
+// Updates the shared status text/color in the tab bar, but only if the
+// given session is the one currently being viewed - background sessions
+// keep tracking their own state on the session object regardless, so it's
+// ready to display correctly the moment you switch to their tab.
+function updateStatusDisplay(key) {
+  if (key !== activeKey) return;
+  const session = sessions.get(key);
+  if (!session) return;
+  activeStatusEl.textContent = session.statusText || '';
+  if (session.state === 3) {
+    activeStatusEl.style.color = 'var(--bs-success)';
+  } else if (session.state === 'error') {
+    activeStatusEl.style.color = 'var(--bs-danger)';
+  } else {
+    activeStatusEl.style.color = 'var(--bs-secondary-color)';
+  }
+}
+
+function showView(key) {
+  activeKey = key;
+
+  listView.style.display = key === 'list' ? '' : 'none';
+  listTab.classList.toggle('active-tab', key === 'list');
+  sessionControls.classList.toggle('controls-visible', key !== 'list');
+
+  sessions.forEach((session, sessionKey) => {
+    const isActive = sessionKey === key;
+    session.paneEl.classList.toggle('active-pane', isActive);
+    session.tabEl.classList.toggle('active-tab', isActive);
+  });
+
+  // Keyboard forwarding is captured at the document level regardless of
+  // DOM focus (see enableKeyboardForwarding), so focus itself isn't needed
+  // for typing to work. What DOES need focus is the hidden clipboard-sink
+  // textarea, so that Ctrl+V / right-click-paste reliably fires a real
+  // paste event we can forward into the session.
+  if (key !== 'list') {
+    const session = sessions.get(key);
+    if (session) {
+      enableKeyboardForwarding(session);
+      fitSessionDisplay(session);
+      requestResize(session);
+      updateStatusDisplay(key);
+      clipboardSink.focus();
+    }
+  } else {
+    // Leaving onkeydown/onkeyup unset (their real default is null) makes
+    // Guacamole's listener a complete no-op - it checks for a handler
+    // before doing anything at all, including preventDefault(). Without
+    // this, typing in the add/edit connection form gets silently eaten,
+    // since the shared listener runs in the capture phase on `document`
+    // and would otherwise intercept every keystroke on the page.
+    disableKeyboardForwarding();
+    loadConnections(); // refresh thumbnails/list contents on return
+  }
+}
+
+let resizeDebounceTimer = null;
+window.addEventListener('resize', () => {
+  const session = sessions.get(activeKey);
+  if (!session) return;
+  // Rescale immediately so it doesn't look broken while dragging the window.
+  fitSessionDisplay(session);
+  // Debounce the actual server-side resolution change request - sending it
+  // on every single resize event while dragging would be excessive and
+  // could cause flicker/lag on the RDP side.
+  clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = setTimeout(() => requestResize(session), 400);
+});
+
+listTab.addEventListener('click', () => showView('list'));
+sharedBackBtn.addEventListener('click', () => showView('list'));
+sharedDisconnectBtn.addEventListener('click', () => closeSession(activeKey));
+
+// Captures the current desktop as a PNG (flatten() composites all of
+// Guacamole's internal layers - background, cursor, etc. - into one plain
+// canvas) and uploads it as this connection's cached preview thumbnail.
+// Best-effort: failures here shouldn't disrupt the actual RDP session.
+function captureThumbnail(key) {
+  const session = sessions.get(key);
+  if (!session || !session.client) return;
+  try {
+    const canvas = session.client.getDisplay().flatten();
+    const dataUrl = canvas.toDataURL('image/png');
+    fetch(`/api/connections/${key}/thumbnail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl }),
+    }).catch((err) => console.warn('Failed to save thumbnail', err));
+  } catch (err) {
+    console.warn('Failed to capture thumbnail', err);
+  }
+}
+
+function closeSession(key) {
+  const session = sessions.get(key);
+  if (!session) return;
+  if (session.client) {
+    captureThumbnail(key); // one last snapshot before disconnecting
+    if (session.thumbnailInterval) clearInterval(session.thumbnailInterval);
+    try { session.client.disconnect(); } catch (err) { /* ignore */ }
+  }
+  session.paneEl.remove();
+  session.tabEl.remove();
+  sessions.delete(key);
+  if (activeKey === key) showView('list');
+}
+
+// One shared keyboard listener for the whole page - forwards keystrokes
+// only to whichever session is currently the active/visible tab. Creating
+// a separate Guacamole.Keyboard per session would cause every open session
+// to receive every keystroke simultaneously, since they all listen on the
+// same document-level events regardless of visibility.
+//
+// Handlers are only assigned while a session tab is actually active (see
+// enableKeyboardForwarding/disableKeyboardForwarding below, called from
+// showView). Guacamole's listener treats a null handler as a complete
+// no-op, so leaving it null while on the list/modal view guarantees normal
+// typing is never intercepted.
+const sharedKeyboard = new Guacamole.Keyboard(document);
+
+function enableKeyboardForwarding(session) {
+  sharedKeyboard.onkeydown = (keysym) => {
+    if (session.client) session.client.sendKeyEvent(1, keysym);
+  };
+  sharedKeyboard.onkeyup = (keysym) => {
+    if (session.client) session.client.sendKeyEvent(0, keysym);
+  };
+}
+
+function disableKeyboardForwarding() {
+  sharedKeyboard.onkeydown = null;
+  sharedKeyboard.onkeyup = null;
+}
+
+function sendTextToActiveSession(text) {
+  if (!text) return;
+  const session = sessions.get(activeKey);
+  if (!session || !session.client) return;
+  const stream = session.client.createClipboardStream('text/plain');
+  const writer = new Guacamole.StringWriter(stream);
+  writer.sendText(text);
+  writer.sendEnd();
+}
+
+// Primary mechanism: detect Ctrl+V directly at the document level and
+// proactively read the clipboard via the Clipboard API. This does NOT
+// depend on any element having focus at the right moment, unlike the
+// native 'paste' event below - which matters here, since clicking around
+// inside a session (to interact with it via mouse) can repeatedly steal
+// focus away from the clipboard-sink textarea faster than a user can
+// Ctrl+V, making the paste-event approach unreliable on its own.
+document.addEventListener('keydown', (e) => {
+  if (activeKey === 'list') return;
+  const isPasteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'v';
+  if (!isPasteShortcut) return;
+  navigator.clipboard.readText().then((text) => {
+    sendTextToActiveSession(text);
+  }).catch((err) => {
+    console.warn('[clipboard] Could not read local clipboard (permission denied/dismissed?):', err);
+  });
+});
+
+// Secondary/fallback mechanism: a genuine native paste event, in case the
+// clipboard-sink textarea does happen to have focus at the right moment.
+clipboardSink.addEventListener('paste', (e) => {
+  const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+  e.preventDefault();
+  sendTextToActiveSession(text);
+});
+
+async function openOrFocusSession(id, name) {
+  const key = String(id);
+
+  // Already open in a background tab - just switch to it, don't reconnect.
+  if (sessions.has(key)) {
+    showView(key);
+    return;
+  }
+
+  const tabEl = document.createElement('button');
+  tabEl.className = 'tab-btn';
+  tabEl.innerHTML = `<span class="tab-label"></span><span class="tab-close" title="Disconnect">×</span>`;
+  tabEl.querySelector('.tab-label').textContent = name;
+  tabEl.addEventListener('click', (e) => {
+    if (e.target.classList.contains('tab-close')) {
+      closeSession(key);
+    } else {
+      showView(key);
+    }
+  });
+  tabsList.appendChild(tabEl);
+
+  const paneEl = document.createElement('div');
+  paneEl.className = 'session-pane';
+  paneEl.innerHTML = `<div class="display-area"></div>`;
+  sessionsContainer.appendChild(paneEl);
+
+  const displayArea = paneEl.querySelector('.display-area');
+
+  sessions.set(key, { name, client: null, paneEl, tabEl, displayArea, state: 1, statusText: 'Connecting…' });
+
+  // Switch to it now (while connecting) so the pane is laid out and its
+  // real size can be measured before we request a matching RDP resolution.
+  showView(key);
+
+  try {
+    const requestWidth = displayArea.clientWidth;
+    const requestHeight = displayArea.clientHeight;
+
+    const tokenRes = await fetch(`/api/connections/${id}/token?width=${requestWidth}&height=${requestHeight}`);
+    if (!tokenRes.ok) throw new Error('Failed to fetch session token');
+    const { token } = await tokenRes.json();
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const tunnel = new Guacamole.WebSocketTunnel(`${proto}://${window.location.host}/webtunnel`);
+    const client = new Guacamole.Client(tunnel);
+    sessions.get(key).client = client;
+
+    displayArea.appendChild(client.getDisplay().getElement());
+
+    client.getDisplay().onresize = (width, height) => {
+      const session = sessions.get(key);
+      if (!session) return;
+      session.remoteWidth = width;
+      session.remoteHeight = height;
+      fitSessionDisplay(session);
+    };
+
+    client.onstatechange = (state) => {
+      const session = sessions.get(key);
+      if (!session) return;
+      session.state = state;
+      session.statusText = STATE_NAMES[state] || `State ${state}`;
+      updateStatusDisplay(key);
+
+      if (state === 3) {
+        // Connected. Capture shortly after (giving the first frame time to
+        // render), then periodically for the rest of the session.
+        if (!session.thumbnailInterval) {
+          setTimeout(() => captureThumbnail(key), 2000);
+          session.thumbnailInterval = setInterval(() => captureThumbnail(key), 20000);
+        }
+      } else if (session.thumbnailInterval) {
+        clearInterval(session.thumbnailInterval);
+        session.thumbnailInterval = null;
+      }
+    };
+    client.onerror = (err) => {
+      console.error('Guacamole client error', err);
+      const session = sessions.get(key);
+      if (!session) return;
+      session.state = 'error';
+      session.statusText = 'Error: ' + (err && err.message ? err.message : 'connection failed');
+      updateStatusDisplay(key);
+    };
+
+    // Clipboard sync, direction 1: text copied inside the remote session
+    // arrives here and gets written to the real system clipboard.
+    client.onclipboard = (stream, mimetype) => {
+      if (mimetype !== 'text/plain') return;
+      const reader = new Guacamole.StringReader(stream);
+      let data = '';
+      reader.ontext = (text) => { data += text; };
+      reader.onend = () => {
+        navigator.clipboard.writeText(data).catch((err) => {
+          console.warn('[clipboard] Failed to write remote clipboard content to the system clipboard:', err);
+        });
+      };
+    };
+
+    client.connect(`token=${token}`);
+
+    // Mouse is scoped per-session since it's bound to that session's own
+    // display element, which only receives real events while visible.
+    const displayElement = client.getDisplay().getElement();
+    const mouse = new Guacamole.Mouse(displayElement);
+    const handleMouse = (mouseState) => client.sendMouseState(mouseState);
+    mouse.onmousedown = handleMouse;
+    mouse.onmouseup = handleMouse;
+    mouse.onmousemove = handleMouse;
+
+    displayElement.tabIndex = 0;
+    if (activeKey === key) clipboardSink.focus();
+    // Clicking into the session (to interact with it via mouse) would
+    // otherwise steal focus away from the clipboard-sink textarea, which
+    // would silently break paste again - refocus the sink, not the canvas.
+    displayElement.addEventListener('click', () => clipboardSink.focus());
+  } catch (err) {
+    console.error(err);
+    const session = sessions.get(key);
+    if (session) {
+      session.state = 'error';
+      session.statusText = err.message || 'Failed to start session';
+      updateStatusDisplay(key);
+    }
+  }
+}
+
+// --- Admin panel ---
+const adminModalBackdrop = document.getElementById('admin-modal-backdrop');
+const adminUsersRows = document.getElementById('admin-users-rows');
+const adminError = document.getElementById('admin-error');
+const adminRegistrationToggle = document.getElementById('admin-registration-toggle');
+
+async function loadAdminPanel() {
+  adminError.textContent = '';
+
+  const settingsRes = await fetch('/api/admin/settings');
+  if (settingsRes.ok) {
+    const settings = await settingsRes.json();
+    adminRegistrationToggle.checked = Boolean(settings.registration_enabled);
+  }
+
+  const usersRes = await fetch('/api/admin/users');
+  if (!usersRes.ok) {
+    adminError.textContent = 'Failed to load users';
+    return;
+  }
+  const users = await usersRes.json();
+
+  adminUsersRows.innerHTML = '';
+  users.forEach((u) => {
+    const isSelf = u.id === currentUserId;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(u.username)}${isSelf ? ' <span class="text-secondary small">(you)</span>' : ''}</td>
+      <td>${u.is_admin ? '<span class="text-success">Admin</span>' : 'User'}</td>
+      <td class="text-secondary small">${new Date(u.created_at).toLocaleDateString()}</td>
+      <td class="text-end">
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-light" data-toggle-admin="${u.id}">${u.is_admin ? 'Remove admin' : 'Make admin'}</button>
+          <button class="btn btn-outline-light" data-reset-password="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button>
+          <button class="btn btn-outline-light" data-delete-user="${u.id}" data-username="${escapeHtml(u.username)}" ${isSelf ? 'disabled' : ''}>Delete</button>
+        </div>
+      </td>`;
+    adminUsersRows.appendChild(tr);
+  });
+}
+
+document.getElementById('admin-btn').addEventListener('click', () => {
+  adminModalBackdrop.classList.add('open');
+  loadAdminPanel();
+});
+document.getElementById('admin-close-btn').addEventListener('click', () => {
+  adminModalBackdrop.classList.remove('open');
+});
+
+// --- Active sessions ---
+const activeSessionsModalBackdrop = document.getElementById('active-sessions-modal-backdrop');
+const activeSessionsRows = document.getElementById('active-sessions-rows');
+const activeSessionsError = document.getElementById('active-sessions-error');
+const activeSessionsEmptyHint = document.getElementById('active-sessions-empty-hint');
+
+function formatDuration(startedAt) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  const mins = Math.floor(seconds / 60);
+  const hrs = Math.floor(mins / 60);
+  if (hrs > 0) return `${hrs}h ${mins % 60}m`;
+  if (mins > 0) return `${mins}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+async function loadActiveSessions() {
+  activeSessionsError.textContent = '';
+  const res = await fetch('/api/admin/active-sessions');
+  if (!res.ok) {
+    activeSessionsError.textContent = 'Failed to load active sessions';
+    return;
+  }
+  const sessions = await res.json();
+
+  activeSessionsRows.innerHTML = '';
+  activeSessionsEmptyHint.classList.toggle('d-none', sessions.length > 0);
+  sessions.forEach((s) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(s.username || '')}</td>
+      <td>${escapeHtml(s.connection_name || '')}</td>
+      <td class="text-secondary small">${escapeHtml(s.hostname || '')}</td>
+      <td class="text-secondary small">${formatDuration(s.started_at)}</td>
+      <td class="text-end">
+        <button class="btn btn-danger btn-sm" data-force-disconnect="${s.session_id}">Force disconnect</button>
+      </td>`;
+    activeSessionsRows.appendChild(tr);
+  });
+}
+
+document.getElementById('admin-active-sessions-btn').addEventListener('click', () => {
+  activeSessionsModalBackdrop.classList.add('open');
+  loadActiveSessions();
+});
+document.getElementById('active-sessions-close-btn').addEventListener('click', () => {
+  activeSessionsModalBackdrop.classList.remove('open');
+});
+
+activeSessionsRows.addEventListener('click', async (e) => {
+  const sessionId = e.target.getAttribute('data-force-disconnect');
+  if (!sessionId) return;
+  if (!confirm('Force-disconnect this session? The user will be disconnected immediately.')) return;
+
+  activeSessionsError.textContent = '';
+  const res = await fetch(`/api/admin/active-sessions/${sessionId}/disconnect`, { method: 'POST' });
+  if (res.ok) {
+    loadActiveSessions();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    activeSessionsError.textContent = data.error || 'Failed to disconnect session';
+  }
+});
+
+// --- Audit log ---
+const auditLogModalBackdrop = document.getElementById('audit-log-modal-backdrop');
+const auditLogRows = document.getElementById('audit-log-rows');
+
+async function loadAuditLog() {
+  const res = await fetch('/api/admin/audit-log');
+  if (!res.ok) return;
+  const events = await res.json();
+
+  auditLogRows.innerHTML = '';
+  events.forEach((ev) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="text-secondary small">${new Date(ev.timestamp).toLocaleString()}</td>
+      <td>${escapeHtml(ev.username)}</td>
+      <td>${escapeHtml(ev.connection_name)}</td>
+      <td class="text-secondary small">${escapeHtml(ev.hostname)}</td>`;
+    auditLogRows.appendChild(tr);
+  });
+}
+
+document.getElementById('admin-audit-log-btn').addEventListener('click', () => {
+  auditLogModalBackdrop.classList.add('open');
+  loadAuditLog();
+});
+document.getElementById('audit-log-close-btn').addEventListener('click', () => {
+  auditLogModalBackdrop.classList.remove('open');
+});
+
+adminRegistrationToggle.addEventListener('change', async () => {
+  adminError.textContent = '';
+  const res = await fetch('/api/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ registration_enabled: adminRegistrationToggle.checked }),
+  });
+  if (!res.ok) {
+    adminError.textContent = 'Failed to update setting';
+    adminRegistrationToggle.checked = !adminRegistrationToggle.checked; // revert on failure
+  }
+});
+
+adminUsersRows.addEventListener('click', async (e) => {
+  const toggleId = e.target.getAttribute('data-toggle-admin');
+  const resetId = e.target.getAttribute('data-reset-password');
+  const deleteId = e.target.getAttribute('data-delete-user');
+
+  adminError.textContent = '';
+
+  if (toggleId) {
+    const res = await fetch(`/api/admin/users/${toggleId}/toggle-admin`, { method: 'POST' });
+    if (res.ok) {
+      loadAdminPanel();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      adminError.textContent = data.error || 'Failed to update admin status';
+    }
+  }
+
+  if (resetId) {
+    const username = e.target.getAttribute('data-username');
+    const newPassword = prompt(`New password for "${username}" (at least 6 characters):`);
+    if (newPassword === null) return; // cancelled
+    const res = await fetch(`/api/admin/users/${resetId}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword }),
+    });
+    if (res.ok) {
+      alert(`Password for "${username}" has been reset.`);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      adminError.textContent = data.error || 'Failed to reset password';
+    }
+  }
+
+  if (deleteId) {
+    const username = e.target.getAttribute('data-username');
+    if (!confirm(`Delete user "${username}"? This also deletes all of their saved connections, files, and thumbnails. This cannot be undone.`)) return;
+    const res = await fetch(`/api/admin/users/${deleteId}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadAdminPanel();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      adminError.textContent = data.error || 'Failed to delete user';
+    }
+  }
+});
+
+let currentUserId = null;
+
+async function checkAuth() {
+  const res = await fetch('/api/auth/me');
+  const data = await res.json();
+  if (!data.authenticated) {
+    window.location.href = '/login.html';
+    return;
+  }
+  currentUserId = data.id;
+  document.getElementById('whoami').textContent = data.username;
+  if (data.is_admin) {
+    document.getElementById('admin-btn').classList.remove('d-none');
+  }
+}
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+
+// --- Change password ---
+const pwModalBackdrop = document.getElementById('password-modal-backdrop');
+const pwForm = document.getElementById('password-form');
+const pwFormError = document.getElementById('password-form-error');
+
+document.getElementById('whoami').addEventListener('click', () => {
+  pwForm.reset();
+  pwFormError.textContent = '';
+  pwModalBackdrop.classList.add('open');
+});
+document.getElementById('password-cancel-btn').addEventListener('click', () => {
+  pwModalBackdrop.classList.remove('open');
+});
+
+pwForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  pwFormError.textContent = '';
+
+  const currentPassword = document.getElementById('pw-current').value;
+  const newPassword = document.getElementById('pw-new').value;
+  const confirmPassword = document.getElementById('pw-confirm').value;
+
+  if (newPassword !== confirmPassword) {
+    pwFormError.textContent = 'New passwords do not match';
+    return;
+  }
+
+  const res = await fetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+
+  if (res.ok) {
+    pwModalBackdrop.classList.remove('open');
+  } else {
+    const data = await res.json().catch(() => ({}));
+    pwFormError.textContent = data.error || 'Failed to update password';
+  }
+});
+
+// --- Default RDP credentials & connection defaults ---
+const settingsModalBackdrop = document.getElementById('settings-modal-backdrop');
+const settingsForm = document.getElementById('settings-form');
+const settingsFormError = document.getElementById('settings-form-error');
+const settingsUsernameInput = document.getElementById('settings-username');
+const settingsPasswordInput = document.getElementById('settings-password');
+const settingsPasswordStatus = document.getElementById('settings-password-status');
+const settingsHostnameSuffixInput = document.getElementById('settings-hostname-suffix');
+const settingsNetbiosDomainInput = document.getElementById('settings-netbios-domain');
+
+// Populated from the server and used by resolveHostname()/openModal() below
+// - fetched once at page load so these are available before the user ever
+// opens the Settings modal, and refreshed again after saving changes there.
+let userHostnameSuffix = '';
+let userNetbiosDomain = '';
+
+async function loadUserDefaults() {
+  const res = await fetch('/api/auth/default-credentials');
+  if (!res.ok) return null;
+  const data = await res.json();
+  userHostnameSuffix = data.hostname_suffix || '';
+  userNetbiosDomain = data.netbios_domain || '';
+  return data;
+}
+
+document.getElementById('settings-btn').addEventListener('click', async () => {
+  settingsForm.reset();
+  settingsFormError.textContent = '';
+  const data = await loadUserDefaults();
+  if (data) {
+    settingsUsernameInput.value = data.username || '';
+    settingsHostnameSuffixInput.value = data.hostname_suffix || '';
+    settingsNetbiosDomainInput.value = data.netbios_domain || '';
+    settingsPasswordStatus.textContent = data.hasPassword
+      ? 'A default password is currently saved.'
+      : 'No default password saved yet.';
+  }
+  settingsModalBackdrop.classList.add('open');
+});
+document.getElementById('settings-cancel-btn').addEventListener('click', () => {
+  settingsModalBackdrop.classList.remove('open');
+});
+
+settingsForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  settingsFormError.textContent = '';
+
+  const res = await fetch('/api/auth/default-credentials', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: settingsUsernameInput.value,
+      password: settingsPasswordInput.value,
+      hostname_suffix: settingsHostnameSuffixInput.value,
+      netbios_domain: settingsNetbiosDomainInput.value,
+    }),
+  });
+
+  if (res.ok) {
+    userHostnameSuffix = settingsHostnameSuffixInput.value;
+    userNetbiosDomain = settingsNetbiosDomainInput.value;
+    settingsModalBackdrop.classList.remove('open');
+  } else {
+    const data = await res.json().catch(() => ({}));
+    settingsFormError.textContent = data.error || 'Failed to save settings';
+  }
+});
+
+// --- Shared drive file transfer ---
+const filesModalBackdrop = document.getElementById('files-modal-backdrop');
+const filesRowsEl = document.getElementById('files-rows');
+const filesEmptyHint = document.getElementById('files-empty-hint');
+const filesError = document.getElementById('files-error');
+const fileUploadInput = document.getElementById('file-upload-input');
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function loadFiles() {
+  filesError.textContent = '';
+  const res = await fetch('/api/files');
+  if (!res.ok) {
+    filesError.textContent = 'Failed to load files';
+    return;
+  }
+  const files = await res.json();
+  filesRowsEl.innerHTML = '';
+  filesEmptyHint.classList.toggle('d-none', files.length > 0);
+  files.forEach((f) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(f.name)}</td>
+      <td>${formatFileSize(f.size)}</td>
+      <td class="text-end">
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-light" data-download="${escapeHtml(f.name)}">Download</button>
+          <button class="btn btn-outline-light" data-delete-file="${escapeHtml(f.name)}">Delete</button>
+        </div>
+      </td>`;
+    filesRowsEl.appendChild(tr);
+  });
+}
+
+document.getElementById('files-btn').addEventListener('click', () => {
+  filesModalBackdrop.classList.add('open');
+  loadFiles();
+});
+document.getElementById('files-close-btn').addEventListener('click', () => {
+  filesModalBackdrop.classList.remove('open');
+});
+
+fileUploadInput.addEventListener('change', async () => {
+  const files = fileUploadInput.files;
+  if (!files || !files.length) return;
+  filesError.textContent = '';
+
+  const formData = new FormData();
+  for (const file of files) formData.append('files', file);
+
+  const res = await fetch('/api/files', { method: 'POST', body: formData });
+  fileUploadInput.value = '';
+  if (res.ok) {
+    loadFiles();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    filesError.textContent = data.error || 'Upload failed';
+  }
+});
+
+filesRowsEl.addEventListener('click', async (e) => {
+  const downloadName = e.target.getAttribute('data-download');
+  const deleteName = e.target.getAttribute('data-delete-file');
+
+  if (downloadName) {
+    window.open(`/api/files/${encodeURIComponent(downloadName)}`, '_blank');
+  }
+  if (deleteName) {
+    if (!confirm(`Delete "${deleteName}"?`)) return;
+    const res = await fetch(`/api/files/${encodeURIComponent(deleteName)}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadFiles();
+    } else {
+      filesError.textContent = 'Failed to delete file';
+    }
+  }
+});
+
+checkAuth().then(() => {
+  loadUserDefaults();
+  loadConnections();
+});
+</script>
+</body>
+</html>
