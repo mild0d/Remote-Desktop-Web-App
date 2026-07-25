@@ -119,6 +119,28 @@ connection attempt (not a real RDP handshake), so it tells you whether
 succeed. Checks run automatically whenever the connections list loads or
 refreshes, all in parallel server-side in a single request.
 
+### Two-factor authentication
+
+Click **🔐 2FA** next to your username to turn on two-factor
+authentication for your own login (independent of anything else in the
+app - it protects signing in, not individual RDP connections). Scan the QR
+code with any standard authenticator app (Google Authenticator, Microsoft
+Authenticator, Authy, etc.), enter the 6-digit code it shows you to
+confirm, and from then on logging in requires both your password and a
+fresh code.
+
+A few things worth knowing:
+- The code-entry step is rate-limited (10 attempts per 15 minutes) - a
+  6-digit code only has a million possibilities, so this matters for it to
+  actually be secure rather than just theatre.
+- Turning 2FA back off requires re-entering your current password.
+- If you lose your authenticator device, an admin can disable 2FA for your
+  account from the Admin panel's user table, letting you log in and set it
+  up again with a new device.
+- The secret is encrypted at rest the same way RDP passwords are - it has
+  to be reversible (not hashed) since verifying a code requires the real
+  secret, not a one-way hash of it.
+
 ### Notes and tags
 
 Each connection can have free-text **notes** (shown as a 📝 icon next to
@@ -148,6 +170,8 @@ opening a panel to:
 - View every registered user
 - Promote/demote admin status for any account
 - Reset another user's password (useful if they're locked out)
+- Disable another user's 2FA (recovery path if they've lost their
+  authenticator device)
 - Delete an account — this also removes all of that user's saved
   connections, cached thumbnails, and shared-drive files
 - Toggle whether new self-registration is allowed at all, letting you close
@@ -251,6 +275,7 @@ lib/auth.js              requireLogin/requireAdmin middleware
 lib/users.js             Flat JSON file read/write for users (bcrypt hashing, admin roles)
 lib/settings.js           Global app settings (registration on/off)
 lib/auditLog.js           Connection attempt logging (who connected to what, when)
+lib/totp.js               Two-factor authentication (TOTP generation/verification, QR codes)
 lib/activeSessions.js     In-memory tracking of currently-open RDP sessions (admin visibility + force-disconnect)
 lib/store.js             Flat JSON file read/write for connections (per-user)
 lib/driveStore.js         Per-user shared drive directory helpers (file transfer)
@@ -258,7 +283,7 @@ lib/thumbnailStore.js     Per-user cached desktop screenshot storage
 lib/tls.js                Self-signed certificate generation/persistence for HTTPS
 lib/crypto.js            Encrypt/decrypt stored RDP passwords
 lib/guacToken.js          Builds the encrypted token guacamole-lite expects
-routes/auth.js            Register/login/logout/me/change-password/default-credentials
+routes/auth.js            Register/login/logout/me/change-password/default-credentials/2FA (rate-limited)
 routes/connections.js     CRUD for connections (scoped to logged-in user) + session token + reachability endpoint
 routes/files.js            Shared drive upload/list/download/delete (scoped to logged-in user)
 routes/admin.js            User management + registration toggle (admin-only)

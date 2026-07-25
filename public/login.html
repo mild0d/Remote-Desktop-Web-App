@@ -48,14 +48,26 @@
         </div>
       </form>
 
+      <form id="twofa-form" class="d-none">
+        <h2 class="card-title mb-3">Enter your code</h2>
+        <p class="text-secondary small">Enter the 6-digit code from your authenticator app.</p>
+        <div class="mb-3">
+          <input id="twofa-code" class="form-control text-center" style="font-size:1.5rem; letter-spacing:0.3rem;" maxlength="6" inputmode="numeric" autocomplete="one-time-code" autofocus required />
+        </div>
+        <div class="text-danger small mb-2" id="twofa-error"></div>
+        <button type="submit" class="btn btn-primary w-100">Verify</button>
+      </form>
+
     </div>
   </div>
 
   <script>
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
+    const twofaForm = document.getElementById('twofa-form');
     const loginError = document.getElementById('login-error');
     const registerError = document.getElementById('register-error');
+    const twofaError = document.getElementById('twofa-error');
 
     document.getElementById('show-register').addEventListener('click', (e) => {
       e.preventDefault();
@@ -81,10 +93,36 @@
       });
 
       if (res.ok) {
-        window.location.href = '/';
+        const data = await res.json();
+        if (data.requires2FA) {
+          loginForm.classList.add('d-none');
+          twofaForm.classList.remove('d-none');
+          document.getElementById('twofa-code').focus();
+        } else {
+          window.location.href = '/';
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         loginError.textContent = data.error || 'Login failed';
+      }
+    });
+
+    twofaForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      twofaError.textContent = '';
+      const code = document.getElementById('twofa-code').value;
+
+      const res = await fetch('/api/auth/verify-2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+
+      if (res.ok) {
+        window.location.href = '/';
+      } else {
+        const data = await res.json().catch(() => ({}));
+        twofaError.textContent = data.error || 'Verification failed';
       }
     });
 

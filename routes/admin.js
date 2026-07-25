@@ -5,6 +5,7 @@ const {
   adminResetPassword,
   deleteUser,
   findById,
+  disableTotp,
 } = require('../lib/users');
 const { getSettings, updateSettings } = require('../lib/settings');
 const { getRecentEvents } = require('../lib/auditLog');
@@ -49,6 +50,18 @@ router.post('/users/:id/reset-password', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   adminResetPassword(userId, newPassword);
+  res.json({ ok: true });
+});
+
+// Recovery path for someone who's lost their authenticator device - lets
+// an admin turn 2FA back off for them so they can log in and re-enable it
+// with a new device.
+router.post('/users/:id/disable-2fa', (req, res) => {
+  const userId = Number(req.params.id);
+  const user = findById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  disableTotp(userId);
   res.json({ ok: true });
 });
 

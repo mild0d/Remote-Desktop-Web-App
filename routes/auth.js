@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const {
   findByUsername,
   findById,
@@ -8,10 +9,31 @@ const {
   setDefaultCredentials,
   getDefaultCredentialsStatus,
   isAdmin,
+  isTotpEnabled,
+  getTotpStatus,
+  setPendingTotpSecret,
+  getPendingTotpSecret,
+  getTotpSecret,
+  confirmTotp,
+  disableTotp,
 } = require('../lib/users');
 const { getSettings } = require('../lib/settings');
+const { generateSecret, verifyToken, generateQrCodeDataUrl } = require('../lib/totp');
 
 const router = express.Router();
+
+// Applies to both the password step and the 2FA code step - a 6-digit TOTP
+// code only has a million possibilities, so without this, "2FA" would be
+// brute-forceable in a short amount of time. Combined with each code only
+// being valid for ~30-90 seconds, this makes brute-forcing genuinely
+// impractical rather than just inconvenient.
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+});
 
 router.post('/register', (req, res) => {
   if (!getSettings().registration_enabled) {
@@ -43,7 +65,7 @@ router.post('/register', (req, res) => {
   }
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', authRateLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
@@ -54,6 +76,34 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
 
+  if (isTotpEnabled(user.id)) {
+    // Password was correct, but don't establish a real session yet - only
+    // a marker saying "this user passed step one," which by itself grants
+    // no access (requireLogin checks session.userId, which stays unset).
+    req.session.pending2FAUserId = user.id;
+    return res.json({ requires2FA: true });
+  }
+
+  req.session.userId = user.id;
+  req.session.username = user.username;
+  res.json({ ok: true, username: user.username });
+});
+
+router.post('/verify-2fa', authRateLimiter, (req, res) => {
+  const pendingUserId = req.session.pending2FAUserId;
+  if (!pendingUserId) {
+    return res.status(401).json({ error: 'No pending login to verify' });
+  }
+
+  const { code } = req.body || {};
+  const secret = getTotpSecret(pendingUserId);
+  const user = findById(pendingUserId);
+
+  if (!user || !secret || !verifyToken(secret, code)) {
+    return res.status(401).json({ error: 'Invalid or expired code' });
+  }
+
+  delete req.session.pending2FAUserId;
   req.session.userId = user.id;
   req.session.username = user.username;
   res.json({ ok: true, username: user.username });
@@ -64,7 +114,7 @@ router.post('/logout', (req, res) => {
 });
 
 // /api/auth isn't mounted behind requireLogin (login/register/me must work
-// without a session), so this route checks for one itself.
+// without a session), so these routes check for one themselves.
 router.post('/change-password', (req, res) => {
   if (!req.session || !req.session.userId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -121,6 +171,68 @@ router.post('/default-credentials', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Failed to save default credentials' });
   }
+});
+
+// --- Two-factor authentication setup/management ---
+
+router.get('/2fa/status', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  res.json(getTotpStatus(req.session.userId));
+});
+
+// Generates a new secret and returns a QR code to scan, but doesn't enable
+// 2FA yet - that only happens once /2fa/confirm proves the user actually
+// scanned it correctly, avoiding a self-lockout from a botched scan.
+router.post('/2fa/setup', async (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const secret = generateSecret();
+  setPendingTotpSecret(req.session.userId, secret);
+
+  try {
+    const qrCodeDataUrl = await generateQrCodeDataUrl(req.session.username, secret);
+    res.json({ secret, qrCodeDataUrl });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate QR code' });
+  }
+});
+
+router.post('/2fa/confirm', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { code } = req.body || {};
+  const pendingSecret = getPendingTotpSecret(req.session.userId);
+
+  if (!pendingSecret) {
+    return res.status(400).json({ error: 'No pending 2FA setup - click "Enable 2FA" first' });
+  }
+  if (!verifyToken(pendingSecret, code)) {
+    return res.status(400).json({ error: 'Incorrect code - check your authenticator app and try again' });
+  }
+
+  confirmTotp(req.session.userId);
+  res.json({ ok: true });
+});
+
+router.post('/2fa/disable', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { password } = req.body || {};
+  const user = findById(req.session.userId);
+  if (!user || !verifyPassword(user, password || '')) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  disableTotp(req.session.userId);
+  res.json({ ok: true });
 });
 
 module.exports = router;
