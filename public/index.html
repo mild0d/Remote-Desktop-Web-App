@@ -93,20 +93,20 @@
   .reachability-dot.reachable { background: var(--bs-success); }
   .reachability-dot.unreachable { background: var(--bs-danger); }
 
-  #card-dropdown-menu {
+  .card-dropdown-style {
     display: none;
     position: fixed; z-index: 1060; min-width: 110px;
     background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
     border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     overflow: hidden;
   }
-  #card-dropdown-menu.show { display: block; }
-  #card-dropdown-menu button {
+  .card-dropdown-style.show { display: block; }
+  .card-dropdown-style button {
     display: block; width: 100%; text-align: left; border: none; background: none;
     padding: 8px 12px; font-size: 14px; color: var(--bs-body-color);
   }
-  #card-dropdown-menu button:hover { background: var(--bs-tertiary-bg); }
-  #card-dropdown-menu button.text-danger:hover { background: var(--bs-danger); color: white; }
+  .card-dropdown-style button:hover { background: var(--bs-tertiary-bg); }
+  .card-dropdown-style button.text-danger:hover { background: var(--bs-danger); color: white; }
 </style>
 </head>
 <body>
@@ -148,8 +148,7 @@
             <input type="search" class="form-control form-control-sm" id="search-input" placeholder="Search connections..." style="width: 220px;" />
           </div>
           <div class="d-flex align-items-center gap-2">
-            <button class="btn btn-outline-light btn-sm" id="export-btn">⬇️ Export</button>
-            <button class="btn btn-outline-light btn-sm" id="import-btn">⬆️ Import</button>
+            <button class="btn btn-outline-light btn-sm" id="import-export-toggle-btn" title="Import / Export">⋮</button>
             <input type="file" id="import-file-input" accept="application/json" class="d-none" />
             <button class="btn btn-primary btn-sm" id="add-btn">+ Add connection</button>
           </div>
@@ -164,10 +163,15 @@
 
 <div id="sessions-container"></div>
 
-<div id="card-dropdown-menu">
+<div id="card-dropdown-menu" class="card-dropdown-style">
   <button id="card-dropdown-edit-btn">Edit</button>
   <button id="card-dropdown-share-btn">Share</button>
   <button id="card-dropdown-delete-btn" class="text-danger">Delete</button>
+</div>
+
+<div id="import-export-menu" class="card-dropdown-style">
+  <button id="export-btn">⬇️ Export</button>
+  <button id="import-btn">⬆️ Import</button>
 </div>
 
 <div class="app-overlay" id="modal-backdrop">
@@ -641,11 +645,13 @@ async function loadReachability() {
 // Content-Disposition header triggers a real file download rather than
 // navigating away from the page.
 document.getElementById('export-btn').addEventListener('click', () => {
+  closeImportExportMenu();
   window.location.href = '/api/connections/export';
 });
 
 const importFileInput = document.getElementById('import-file-input');
 document.getElementById('import-btn').addEventListener('click', () => {
+  closeImportExportMenu();
   importFileInput.click();
 });
 
@@ -813,18 +819,50 @@ document.getElementById('card-dropdown-delete-btn').addEventListener('click', as
   loadConnections();
 });
 
-// Closes the dropdown when clicking anywhere outside it (or its trigger).
+// --- Import/Export menu (same portal-style pattern as the card dropdown) ---
+const importExportMenu = document.getElementById('import-export-menu');
+const importExportToggleBtn = document.getElementById('import-export-toggle-btn');
+
+function closeImportExportMenu() {
+  importExportMenu.classList.remove('show');
+}
+
+function openImportExportMenu() {
+  const rect = importExportToggleBtn.getBoundingClientRect();
+  importExportMenu.style.top = `${rect.bottom + 4}px`;
+  importExportMenu.style.left = 'auto';
+  importExportMenu.style.right = `${window.innerWidth - rect.right}px`;
+  importExportMenu.classList.add('show');
+}
+
+importExportToggleBtn.addEventListener('click', () => {
+  const wasOpen = importExportMenu.classList.contains('show');
+  closeImportExportMenu();
+  closeCardDropdown(); // only one menu open at a time
+  if (!wasOpen) openImportExportMenu();
+});
+
+// Closes either dropdown when clicking anywhere outside it (or its trigger).
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#card-dropdown-menu') && !e.target.matches('[data-dropdown-toggle]')) {
     closeCardDropdown();
   }
+  if (!e.target.closest('#import-export-menu') && e.target !== importExportToggleBtn) {
+    closeImportExportMenu();
+  }
 });
 
 // Reposition (or just close, simplest and safest) if the window resizes or
-// the grid scrolls while the dropdown is open, since its fixed coordinates
+// the grid scrolls while a dropdown is open, since its fixed coordinates
 // were calculated for a specific moment in time.
-document.getElementById('grid-scroll-container').addEventListener('scroll', closeCardDropdown);
-window.addEventListener('resize', closeCardDropdown);
+document.getElementById('grid-scroll-container').addEventListener('scroll', () => {
+  closeCardDropdown();
+  closeImportExportMenu();
+});
+window.addEventListener('resize', () => {
+  closeCardDropdown();
+  closeImportExportMenu();
+});
 
 function resolveHostname(raw) {
   const trimmed = raw.trim();
