@@ -119,27 +119,35 @@ connection attempt (not a real RDP handshake), so it tells you whether
 succeed. Checks run automatically whenever the connections list loads or
 refreshes, all in parallel server-side in a single request.
 
-### Two-factor authentication
+### Two-factor authentication (required)
 
-Click **🔐 2FA** next to your username to turn on two-factor
-authentication for your own login (independent of anything else in the
-app - it protects signing in, not individual RDP connections). Scan the QR
-code with any standard authenticator app (Google Authenticator, Microsoft
-Authenticator, Authy, etc.), enter the 6-digit code it shows you to
-confirm, and from then on logging in requires both your password and a
-fresh code.
+Every account must have two-factor authentication set up — there's no way
+to opt out. New accounts are walked through setup immediately after
+registering, before they get any other access to the app. If you're
+upgrading from a version of this app that predates this feature, any
+existing account without 2FA yet gets the same treatment automatically:
+the next time it logs in with the correct password, it's required to set
+up 2FA on the spot before reaching anything else.
+
+Setup itself: scan the QR code with any standard authenticator app (Google
+Authenticator, Microsoft Authenticator, Authy, etc.), then enter the
+6-digit code it shows you to confirm. From then on, logging in requires
+both your password and a fresh code.
 
 A few things worth knowing:
 - The code-entry step is rate-limited (10 attempts per 15 minutes) - a
   6-digit code only has a million possibilities, so this matters for it to
   actually be secure rather than just theatre.
-- Turning 2FA back off requires re-entering your current password.
-- If you lose your authenticator device, an admin can disable 2FA for your
-  account from the Admin panel's user table, letting you log in and set it
-  up again with a new device.
+- There's no self-service way to turn 2FA off, since it's mandatory. If
+  you lose your authenticator device, an admin can reset 2FA for your
+  account from the Admin panel's user table — this doesn't exempt the
+  account from the policy, it just clears the way for you to set it up
+  again (on a new device) the next time you log in.
 - The secret is encrypted at rest the same way RDP passwords are - it has
   to be reversible (not hashed) since verifying a code requires the real
   secret, not a one-way hash of it.
+- Click **🔐 2FA** next to your username any time to confirm it's active
+  on your account.
 
 ### Notes and tags
 

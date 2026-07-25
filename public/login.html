@@ -59,6 +59,28 @@
         <button type="submit" class="btn btn-primary w-100">Verify</button>
       </form>
 
+      <div id="setup2fa-section" class="d-none">
+        <h2 class="card-title mb-3">Set up two-factor authentication</h2>
+        <p class="text-secondary small">
+          Required for every account. Scan this with an authenticator app
+          (Google Authenticator, Microsoft Authenticator, Authy, etc.),
+          then enter the 6-digit code it shows you.
+        </p>
+        <div class="text-center mb-3">
+          <img id="setup2fa-qr-image" src="" alt="2FA QR code" style="background:white; padding:8px; border-radius:8px; max-width:100%;" />
+        </div>
+        <p class="text-secondary small">
+          Can't scan it? Enter this manually: <code id="setup2fa-manual-secret"></code>
+        </p>
+        <form id="setup2fa-form">
+          <div class="mb-3">
+            <input id="setup2fa-code" class="form-control text-center" style="font-size:1.5rem; letter-spacing:0.3rem;" maxlength="6" inputmode="numeric" autocomplete="one-time-code" required />
+          </div>
+          <div class="text-danger small mb-2" id="setup2fa-error"></div>
+          <button type="submit" class="btn btn-primary w-100">Confirm and finish setup</button>
+        </form>
+      </div>
+
     </div>
   </div>
 
@@ -66,9 +88,33 @@
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
     const twofaForm = document.getElementById('twofa-form');
+    const setup2faSection = document.getElementById('setup2fa-section');
+    const setup2faForm = document.getElementById('setup2fa-form');
     const loginError = document.getElementById('login-error');
     const registerError = document.getElementById('register-error');
     const twofaError = document.getElementById('twofa-error');
+    const setup2faError = document.getElementById('setup2fa-error');
+
+    // Shared by both the register and login handlers - either one can
+    // trigger this, since 2FA setup is mandatory for any account that
+    // doesn't have it yet, regardless of how they got to this point.
+    async function showMandatorySetup() {
+      loginForm.classList.add('d-none');
+      registerForm.classList.add('d-none');
+      twofaForm.classList.add('d-none');
+      setup2faSection.classList.remove('d-none');
+      setup2faError.textContent = '';
+
+      const res = await fetch('/api/auth/2fa/setup', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('setup2fa-qr-image').src = data.qrCodeDataUrl;
+        document.getElementById('setup2fa-manual-secret').textContent = data.secret;
+        document.getElementById('setup2fa-code').focus();
+      } else {
+        setup2faError.textContent = 'Failed to start 2FA setup';
+      }
+    }
 
     document.getElementById('show-register').addEventListener('click', (e) => {
       e.preventDefault();
@@ -99,6 +145,8 @@
           loginForm.classList.add('d-none');
           twofaForm.classList.remove('d-none');
           document.getElementById('twofa-code').focus();
+        } else if (data.requiresSetup2FA) {
+          showMandatorySetup();
         } else {
           window.location.href = '/';
         }
@@ -146,10 +194,29 @@
       });
 
       if (res.ok) {
-        window.location.href = '/';
+        showMandatorySetup();
       } else {
         const data = await res.json().catch(() => ({}));
         registerError.textContent = data.error || 'Registration failed';
+      }
+    });
+
+    setup2faForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setup2faError.textContent = '';
+      const code = document.getElementById('setup2fa-code').value;
+
+      const res = await fetch('/api/auth/2fa/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+
+      if (res.ok) {
+        window.location.href = '/';
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setup2faError.textContent = data.error || 'Incorrect code - try again';
       }
     });
   </script>

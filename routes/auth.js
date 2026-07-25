@@ -15,7 +15,6 @@ const {
   getPendingTotpSecret,
   getTotpSecret,
   confirmTotp,
-  disableTotp,
   MIN_PASSWORD_LENGTH,
 } = require('../lib/users');
 const { getSettings } = require('../lib/settings');
@@ -37,6 +36,18 @@ const authRateLimiter = rateLimit({
   message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
 });
 
+// 2FA is mandatory: nobody reaches req.session.userId (real access) without
+// having totp_enabled. There are two ways into the setup flow that need to
+// share the same /2fa/setup and /2fa/confirm endpoints:
+//   1. A brand new account, immediately after /register.
+//   2. An existing account (created before this policy, or reset by an
+//      admin for recovery) that tries to log in and doesn't have 2FA yet.
+// Both cases set req.session.pendingSetupUserId rather than userId - this
+// grants zero access to anything else, same principle as pending2FAUserId.
+function getSetupUserId(req) {
+  return (req.session && (req.session.pendingSetupUserId || req.session.userId)) || null;
+}
+
 router.post('/register', (req, res) => {
   if (!getSettings().registration_enabled) {
     return res.status(403).json({ error: 'New registrations are currently disabled' });
@@ -56,10 +67,12 @@ router.post('/register', (req, res) => {
 
   try {
     const user = createUser(username.trim(), password);
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    logLoginEvent({ username: user.username, success: true, reason: 'Account created', ip: req.ip });
-    res.status(201).json({ ok: true, username: user.username });
+    // No real session yet - 2FA setup is mandatory before this account can
+    // do anything else. The frontend follows this up immediately with a
+    // call to /2fa/setup to get the QR code.
+    req.session.pendingSetupUserId = user.id;
+    logLoginEvent({ username: user.username, success: true, reason: 'Account created - 2FA setup required', ip: req.ip });
+    res.status(201).json({ requiresSetup2FA: true, username: user.username });
   } catch (err) {
     if (err.code === 'USERNAME_TAKEN') {
       return res.status(409).json({ error: err.message });
@@ -83,19 +96,18 @@ router.post('/login', authRateLimiter, (req, res) => {
   }
 
   if (isTotpEnabled(user.id)) {
-    // Password was correct, but don't establish a real session yet - only
-    // a marker saying "this user passed step one," which by itself grants
-    // no access (requireLogin checks session.userId, which stays unset).
-    // The real success/failure outcome gets logged at /verify-2fa instead,
-    // once we actually know whether they completed the second factor.
+    // Password correct, 2FA already set up - proceed to the code-entry step.
     req.session.pending2FAUserId = user.id;
     return res.json({ requires2FA: true });
   }
 
-  logLoginEvent({ username: user.username, success: true, reason: 'Login successful', ip: req.ip });
-  req.session.userId = user.id;
-  req.session.username = user.username;
-  res.json({ ok: true, username: user.username });
+  // Password correct, but this account doesn't have 2FA yet (pre-existing
+  // account from before this policy, or reset by an admin for recovery).
+  // Mandatory setup, same as a fresh registration - no real access until
+  // it's completed.
+  req.session.pendingSetupUserId = user.id;
+  logLoginEvent({ username: user.username, success: false, reason: 'Password correct - 2FA setup required before access', ip: req.ip });
+  res.json({ requiresSetup2FA: true, username: user.username });
 });
 
 router.post('/verify-2fa', authRateLimiter, (req, res) => {
@@ -189,7 +201,7 @@ router.post('/default-credentials', (req, res) => {
   }
 });
 
-// --- Two-factor authentication setup/management ---
+// --- Two-factor authentication (mandatory) ---
 
 router.get('/2fa/status', (req, res) => {
   if (!req.session || !req.session.userId) {
@@ -198,19 +210,27 @@ router.get('/2fa/status', (req, res) => {
   res.json(getTotpStatus(req.session.userId));
 });
 
-// Generates a new secret and returns a QR code to scan, but doesn't enable
-// 2FA yet - that only happens once /2fa/confirm proves the user actually
-// scanned it correctly, avoiding a self-lockout from a botched scan.
+// Generates a new secret and returns a QR code to scan. Works both for the
+// mandatory setup flow (pendingSetupUserId, not yet fully logged in) and,
+// defensively, an already-logged-in session - though under a mandatory
+// policy the latter shouldn't normally happen, since reaching userId
+// already implies totp_enabled is true.
 router.post('/2fa/setup', async (req, res) => {
-  if (!req.session || !req.session.userId) {
+  const userId = getSetupUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const user = findById(userId);
+  if (!user) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
   const secret = generateSecret();
-  setPendingTotpSecret(req.session.userId, secret);
+  setPendingTotpSecret(userId, secret);
 
   try {
-    const qrCodeDataUrl = await generateQrCodeDataUrl(req.session.username, secret);
+    const qrCodeDataUrl = await generateQrCodeDataUrl(user.username, secret);
     res.json({ secret, qrCodeDataUrl });
   } catch (err) {
     res.status(500).json({ error: 'Failed to generate QR code' });
@@ -218,36 +238,33 @@ router.post('/2fa/setup', async (req, res) => {
 });
 
 router.post('/2fa/confirm', (req, res) => {
-  if (!req.session || !req.session.userId) {
+  const userId = getSetupUserId(req);
+  if (!userId) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
   const { code } = req.body || {};
-  const pendingSecret = getPendingTotpSecret(req.session.userId);
+  const pendingSecret = getPendingTotpSecret(userId);
+  const user = findById(userId);
 
-  if (!pendingSecret) {
+  if (!pendingSecret || !user) {
     return res.status(400).json({ error: 'No pending 2FA setup - click "Enable 2FA" first' });
   }
   if (!verifyToken(pendingSecret, code)) {
     return res.status(400).json({ error: 'Incorrect code - check your authenticator app and try again' });
   }
 
-  confirmTotp(req.session.userId);
-  res.json({ ok: true });
-});
+  confirmTotp(userId);
 
-router.post('/2fa/disable', (req, res) => {
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ error: 'Not authenticated' });
+  // If this completed the mandatory pre-login setup flow, promote the
+  // session to real access now that 2FA is genuinely confirmed.
+  if (req.session.pendingSetupUserId) {
+    delete req.session.pendingSetupUserId;
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA setup completed)', ip: req.ip });
   }
 
-  const { password } = req.body || {};
-  const user = findById(req.session.userId);
-  if (!user || !verifyPassword(user, password || '')) {
-    return res.status(401).json({ error: 'Current password is incorrect' });
-  }
-
-  disableTotp(req.session.userId);
   res.json({ ok: true });
 });
 

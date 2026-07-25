@@ -305,46 +305,18 @@
 </div>
 
 <div class="app-overlay" id="twofa-modal-backdrop">
-  <div class="card" style="width: 440px; max-width: 92vw;">
+  <div class="card" style="width: 420px; max-width: 92vw;">
     <div class="card-body">
       <h2 class="h5 card-title">Two-factor authentication</h2>
-
-      <!-- Shown when 2FA is not yet enabled -->
-      <div id="twofa-setup-section">
-        <p class="text-secondary small">
-          Scan this QR code with an authenticator app (Google Authenticator,
-          Microsoft Authenticator, Authy, etc.), then enter the 6-digit code
-          it shows you to confirm.
-        </p>
-        <div class="text-center mb-3">
-          <img id="twofa-qr-image" src="" alt="2FA QR code" style="background:white; padding:8px; border-radius:8px;" />
-        </div>
-        <p class="text-secondary small">
-          Can't scan it? Enter this manually: <code id="twofa-manual-secret"></code>
-        </p>
-        <div class="mb-3">
-          <label class="form-label">Confirmation code</label>
-          <input id="twofa-setup-code" class="form-control" maxlength="6" inputmode="numeric" placeholder="123456" />
-        </div>
-        <div class="text-danger small mb-2" id="twofa-setup-error"></div>
-        <div class="app-panel-footer">
-          <button type="button" class="btn btn-outline-light" id="twofa-setup-cancel-btn">Cancel</button>
-          <button type="button" class="btn btn-primary" id="twofa-setup-confirm-btn">Enable 2FA</button>
-        </div>
-      </div>
-
-      <!-- Shown when 2FA is already enabled -->
-      <div id="twofa-enabled-section" class="d-none">
-        <p class="text-success">✓ Two-factor authentication is enabled on your account.</p>
-        <p class="text-secondary small">Enter your password to turn it off.</p>
-        <div class="mb-3">
-          <input id="twofa-disable-password" type="password" class="form-control" placeholder="Current password" />
-        </div>
-        <div class="text-danger small mb-2" id="twofa-disable-error"></div>
-        <div class="app-panel-footer">
-          <button type="button" class="btn btn-outline-light" id="twofa-enabled-close-btn">Close</button>
-          <button type="button" class="btn btn-danger" id="twofa-disable-btn">Disable 2FA</button>
-        </div>
+      <p class="text-success">✓ Two-factor authentication is enabled on your account.</p>
+      <p class="text-secondary small">
+        This is required for every account and was set up when you created
+        yours. If you've lost your authenticator device, ask an admin to
+        reset it for you from the Admin panel - you'll then set it up again
+        (on a new device) the next time you log in.
+      </p>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="twofa-enabled-close-btn">Close</button>
       </div>
     </div>
   </div>
@@ -1430,79 +1402,12 @@ settingsForm.addEventListener('submit', async (e) => {
 
 // --- Two-factor authentication ---
 const twofaModalBackdrop = document.getElementById('twofa-modal-backdrop');
-const twofaSetupSection = document.getElementById('twofa-setup-section');
-const twofaEnabledSection = document.getElementById('twofa-enabled-section');
-const twofaQrImage = document.getElementById('twofa-qr-image');
-const twofaManualSecret = document.getElementById('twofa-manual-secret');
-const twofaSetupCode = document.getElementById('twofa-setup-code');
-const twofaSetupError = document.getElementById('twofa-setup-error');
-const twofaDisablePassword = document.getElementById('twofa-disable-password');
-const twofaDisableError = document.getElementById('twofa-disable-error');
 
-document.getElementById('twofa-settings-btn').addEventListener('click', async () => {
-  twofaSetupError.textContent = '';
-  twofaDisableError.textContent = '';
-  twofaSetupCode.value = '';
-  twofaDisablePassword.value = '';
-
-  const statusRes = await fetch('/api/auth/2fa/status');
-  const status = statusRes.ok ? await statusRes.json() : { enabled: false };
-
-  if (status.enabled) {
-    twofaSetupSection.classList.add('d-none');
-    twofaEnabledSection.classList.remove('d-none');
-  } else {
-    twofaEnabledSection.classList.add('d-none');
-    twofaSetupSection.classList.remove('d-none');
-
-    const setupRes = await fetch('/api/auth/2fa/setup', { method: 'POST' });
-    if (setupRes.ok) {
-      const data = await setupRes.json();
-      twofaQrImage.src = data.qrCodeDataUrl;
-      twofaManualSecret.textContent = data.secret;
-    } else {
-      twofaSetupError.textContent = 'Failed to start 2FA setup';
-    }
-  }
-
+document.getElementById('twofa-settings-btn').addEventListener('click', () => {
   twofaModalBackdrop.classList.add('open');
-});
-
-document.getElementById('twofa-setup-cancel-btn').addEventListener('click', () => {
-  twofaModalBackdrop.classList.remove('open');
 });
 document.getElementById('twofa-enabled-close-btn').addEventListener('click', () => {
   twofaModalBackdrop.classList.remove('open');
-});
-
-document.getElementById('twofa-setup-confirm-btn').addEventListener('click', async () => {
-  twofaSetupError.textContent = '';
-  const res = await fetch('/api/auth/2fa/confirm', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: twofaSetupCode.value }),
-  });
-  if (res.ok) {
-    twofaModalBackdrop.classList.remove('open');
-  } else {
-    const data = await res.json().catch(() => ({}));
-    twofaSetupError.textContent = data.error || 'Failed to confirm 2FA';
-  }
-});
-
-document.getElementById('twofa-disable-btn').addEventListener('click', async () => {
-  twofaDisableError.textContent = '';
-  const res = await fetch('/api/auth/2fa/disable', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: twofaDisablePassword.value }),
-  });
-  if (res.ok) {
-    twofaModalBackdrop.classList.remove('open');
-  } else {
-    const data = await res.json().catch(() => ({}));
-    twofaDisableError.textContent = data.error || 'Failed to disable 2FA';
-  }
 });
 
 // --- Shared drive file transfer ---
