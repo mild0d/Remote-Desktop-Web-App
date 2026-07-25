@@ -166,6 +166,7 @@
 
 <div id="card-dropdown-menu">
   <button id="card-dropdown-edit-btn">Edit</button>
+  <button id="card-dropdown-share-btn">Share</button>
   <button id="card-dropdown-delete-btn" class="text-danger">Delete</button>
 </div>
 
@@ -337,6 +338,32 @@
       </p>
       <div class="app-panel-footer">
         <button type="button" class="btn btn-outline-light" id="twofa-enabled-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="share-modal-backdrop">
+  <div class="card" style="width: 400px; max-width: 92vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Share connection</h2>
+      <p class="text-secondary small">
+        Shares a copy into their own list - name, hostname, tags, and notes
+        carry over, but never a password. They'll use their own
+        credentials to connect (their own default credentials, or their
+        own per-connection override).
+      </p>
+      <div class="mb-3" id="share-no-users-hint">
+        <p class="text-secondary small">No other users to share with yet.</p>
+      </div>
+      <div class="mb-3 d-none" id="share-target-picker">
+        <label class="form-label">Share with</label>
+        <select id="share-target-select" class="form-select"></select>
+      </div>
+      <div class="text-danger small mb-2" id="share-error"></div>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="share-cancel-btn">Cancel</button>
+        <button type="button" class="btn btn-primary d-none" id="share-confirm-btn">Share</button>
       </div>
     </div>
   </div>
@@ -721,6 +748,61 @@ document.getElementById('card-dropdown-edit-btn').addEventListener('click', asyn
   closeCardDropdown();
   const res = await fetch(`/api/connections/${id}`);
   openModal(await res.json());
+});
+
+// --- Share connection ---
+const shareModalBackdrop = document.getElementById('share-modal-backdrop');
+const shareNoUsersHint = document.getElementById('share-no-users-hint');
+const shareTargetPicker = document.getElementById('share-target-picker');
+const shareTargetSelect = document.getElementById('share-target-select');
+const shareError = document.getElementById('share-error');
+const shareConfirmBtn = document.getElementById('share-confirm-btn');
+let shareConnectionId = null;
+
+document.getElementById('card-dropdown-share-btn').addEventListener('click', async () => {
+  shareConnectionId = cardDropdownConnectionId;
+  closeCardDropdown();
+  shareError.textContent = '';
+
+  const res = await fetch('/api/connections/share-targets');
+  const targets = res.ok ? await res.json() : [];
+
+  if (targets.length === 0) {
+    shareNoUsersHint.classList.remove('d-none');
+    shareTargetPicker.classList.add('d-none');
+    shareConfirmBtn.classList.add('d-none');
+  } else {
+    shareNoUsersHint.classList.add('d-none');
+    shareTargetPicker.classList.remove('d-none');
+    shareConfirmBtn.classList.remove('d-none');
+    shareTargetSelect.innerHTML = targets
+      .map((u) => `<option value="${u.id}">${escapeHtml(u.username)}</option>`)
+      .join('');
+  }
+
+  shareModalBackdrop.classList.add('open');
+});
+
+document.getElementById('share-cancel-btn').addEventListener('click', () => {
+  shareModalBackdrop.classList.remove('open');
+});
+
+shareConfirmBtn.addEventListener('click', async () => {
+  shareError.textContent = '';
+  const res = await fetch(`/api/connections/${shareConnectionId}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId: Number(shareTargetSelect.value) }),
+  });
+
+  if (res.ok) {
+    const data = await res.json();
+    shareModalBackdrop.classList.remove('open');
+    alert(`Shared with ${data.sharedWith}.`);
+  } else {
+    const data = await res.json().catch(() => ({}));
+    shareError.textContent = data.error || 'Failed to share connection';
+  }
 });
 
 document.getElementById('card-dropdown-delete-btn').addEventListener('click', async () => {

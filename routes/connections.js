@@ -6,7 +6,7 @@ const { encrypt, decrypt } = require('../lib/crypto');
 const { encryptGuacToken } = require('../lib/guacToken');
 const { ensureUserDriveDir, userDrivePathForGuacd } = require('../lib/driveStore');
 const { thumbnailPath } = require('../lib/thumbnailStore');
-const { getDefaultCredentials } = require('../lib/users');
+const { getDefaultCredentials, listAllUsers, findById: findUserById } = require('../lib/users');
 const { logConnectionEvent } = require('../lib/auditLog');
 
 const router = express.Router();
@@ -142,6 +142,17 @@ router.post('/import', (req, res) => {
   res.json({ ok: true, imported, skipped: errors.length, errors });
 });
 
+// Any logged-in user can see who else is on the system, for the purpose of
+// picking a recipient to share a connection with - this is a peer-to-peer
+// action between regular teammates, not an admin capability, so it's
+// deliberately not behind requireAdmin the way the admin user list is.
+router.get('/share-targets', (req, res) => {
+  const targets = listAllUsers()
+    .filter((u) => u.id !== req.session.userId)
+    .map(({ id, username }) => ({ id, username }));
+  res.json(targets);
+});
+
 router.get('/:id', (req, res) => {
   const conn = loadAll().find(
     (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
@@ -217,6 +228,48 @@ router.delete('/:id', (req, res) => {
   if (!target) return res.status(404).json({ error: 'Not found' });
   saveAll(list.filter((c) => c.id !== target.id));
   res.json({ ok: true });
+});
+
+// Shares a copy of this connection into another user's list. Deliberately
+// excludes the password, same principle as export/import - the recipient
+// should use their own credentials (their own default credentials, or
+// their own per-connection override), not inherit whoever shared it with
+// them. The ownership check matters here too: without it, any logged-in
+// user could share (i.e. read the structural details of) a connection
+// they don't actually own, just by guessing/incrementing ids.
+router.post('/:id/share', (req, res) => {
+  const conn = loadAll().find(
+    (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
+  );
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+
+  const { targetUserId } = req.body || {};
+  const targetUser = findUserById(Number(targetUserId));
+  if (!targetUser) return res.status(400).json({ error: 'That user was not found' });
+  if (targetUser.id === req.session.userId) {
+    return res.status(400).json({ error: 'You cannot share a connection with yourself' });
+  }
+
+  const list = loadAll();
+  const copy = {
+    id: nextId(list),
+    user_id: targetUser.id,
+    name: conn.name,
+    hostname: conn.hostname,
+    port: conn.port,
+    username: conn.username || '',
+    password: '', // intentionally never shared - see comment above
+    security: conn.security || 'any',
+    ignore_cert: conn.ignore_cert,
+    color_depth: conn.color_depth || '16',
+    icon: conn.icon || '🖥️',
+    notes: conn.notes || '',
+    tags: Array.isArray(conn.tags) ? conn.tags : [],
+    created_at: new Date().toISOString(),
+  };
+  list.push(copy);
+  saveAll(list);
+  res.json({ ok: true, sharedWith: targetUser.username });
 });
 
 // Generates the encrypted token guacamole-lite needs to open a session.

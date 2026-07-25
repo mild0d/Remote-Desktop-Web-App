@@ -158,6 +158,16 @@ to filter down to just connections with that tag; click it again to clear
 the filter. Both are included in export/import, so a shared server list
 keeps its organization when a teammate imports it.
 
+### Share a connection with a teammate
+
+Click the **⋮** menu on any connection card → **Share** → pick a teammate
+from the list. This drops a copy of that connection straight into their
+own list — same principle as export/import (name, hostname, tags, and
+notes carry over, but never a password), just one click instead of a
+download/upload round trip. They'll use their own credentials to connect
+(their own default credentials, or their own per-connection override) —
+sharing a connection never shares your password.
+
 ### Export / Import connections
 
 **⬇️ Export** downloads a JSON file of all your saved connections.
