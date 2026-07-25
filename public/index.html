@@ -247,11 +247,12 @@
         </div>
         <div class="mb-3">
           <label class="form-label">New password</label>
-          <input id="pw-new" type="password" class="form-control" autocomplete="new-password" required minlength="6" />
+          <input id="pw-new" type="password" class="form-control" autocomplete="new-password" required minlength="10" />
+          <div class="form-text">At least 10 characters.</div>
         </div>
         <div class="mb-3">
           <label class="form-label">Confirm new password</label>
-          <input id="pw-confirm" type="password" class="form-control" autocomplete="new-password" required minlength="6" />
+          <input id="pw-confirm" type="password" class="form-control" autocomplete="new-password" required minlength="10" />
         </div>
         <div class="text-danger small mb-2" id="password-form-error"></div>
         <div class="app-panel-footer">
@@ -402,12 +403,12 @@
     <div class="card-body">
       <h2 class="h5 card-title">Audit log</h2>
       <p class="text-secondary small">
-        Every RDP connection attempt, most recent first. Kept to the most
-        recent 5000 entries.
+        Every RDP connection attempt and web app login attempt, most recent
+        first. Kept to the most recent 5000 entries.
       </p>
       <div style="max-height: 60vh; overflow-y: auto;">
         <table class="table table-hover align-middle mb-0">
-          <thead><tr><th>When</th><th>User</th><th>Connection</th><th>Host</th></tr></thead>
+          <thead><tr><th>When</th><th>Type</th><th>User</th><th>Details</th></tr></thead>
           <tbody id="audit-log-rows"></tbody>
         </table>
       </div>
@@ -1194,11 +1195,24 @@ async function loadAuditLog() {
   auditLogRows.innerHTML = '';
   events.forEach((ev) => {
     const tr = document.createElement('tr');
+    let typeLabel, details;
+
+    if (ev.type === 'login') {
+      typeLabel = 'Login';
+      const badge = ev.success
+        ? '<span class="badge text-bg-success">success</span>'
+        : '<span class="badge text-bg-danger">failed</span>';
+      details = `${badge} ${escapeHtml(ev.reason || '')}${ev.ip ? ` <span class="text-secondary small">(${escapeHtml(ev.ip)})</span>` : ''}`;
+    } else {
+      typeLabel = 'Connection';
+      details = `${escapeHtml(ev.connection_name || '')} <span class="text-secondary small">${escapeHtml(ev.hostname || '')}</span>`;
+    }
+
     tr.innerHTML = `
       <td class="text-secondary small">${new Date(ev.timestamp).toLocaleString()}</td>
-      <td>${escapeHtml(ev.username)}</td>
-      <td>${escapeHtml(ev.connection_name)}</td>
-      <td class="text-secondary small">${escapeHtml(ev.hostname)}</td>`;
+      <td>${typeLabel}</td>
+      <td>${escapeHtml(ev.username || '')}</td>
+      <td>${details}</td>`;
     auditLogRows.appendChild(tr);
   });
 }

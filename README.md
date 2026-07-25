@@ -177,9 +177,11 @@ opening a panel to:
 - Toggle whether new self-registration is allowed at all, letting you close
   signups once your team is fully set up (registration is wide open by
   default, as noted in Security below)
-- View the **📋 Audit log** — every RDP connection attempt across every
-  user, with timestamp, who connected, and to which server. Kept to the
-  most recent 5000 entries to avoid unbounded growth on flat-file storage.
+- View the **📋 Audit log** — every RDP connection attempt *and* every web
+  app login attempt (success or failure, including failed attempts against
+  usernames that don't even exist - useful for spotting brute-force
+  attempts) across every user. Kept to the most recent 5000 entries to
+  avoid unbounded growth on flat-file storage.
 - View **🖥️ Active sessions** — RDP sessions genuinely open *right now*
   across every user (not just attempted - actually connected), with a
   **Force disconnect** button per session. This is a different thing from
@@ -259,6 +261,9 @@ That's a deliberate simplicity tradeoff, not an oversight. Given that:
   designed for concurrent multi-writer access — fine for a handful of people
   using the app at once, not built for heavy concurrent load.
 - Passwords are hashed with bcrypt before being stored in `data/users.json`.
+  Minimum length is 10 characters (no forced complexity rules like
+  requiring symbols/uppercase - length matters more, and complexity rules
+  tend to just produce predictable patterns like "Password1!").
 - Your default RDP password (if set) is encrypted the same way per-connection
   passwords are, and is only ever decrypted server-side at connect time -
   the `/api/auth/default-credentials` endpoint never sends the password

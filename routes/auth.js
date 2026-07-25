@@ -16,9 +16,11 @@ const {
   getTotpSecret,
   confirmTotp,
   disableTotp,
+  MIN_PASSWORD_LENGTH,
 } = require('../lib/users');
 const { getSettings } = require('../lib/settings');
 const { generateSecret, verifyToken, generateQrCodeDataUrl } = require('../lib/totp');
+const { logLoginEvent } = require('../lib/auditLog');
 
 const router = express.Router();
 
@@ -48,14 +50,15 @@ router.post('/register', (req, res) => {
   if (username.trim().length < 3) {
     return res.status(400).json({ error: 'Username must be at least 3 characters' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
   }
 
   try {
     const user = createUser(username.trim(), password);
     req.session.userId = user.id;
     req.session.username = user.username;
+    logLoginEvent({ username: user.username, success: true, reason: 'Account created', ip: req.ip });
     res.status(201).json({ ok: true, username: user.username });
   } catch (err) {
     if (err.code === 'USERNAME_TAKEN') {
@@ -73,6 +76,9 @@ router.post('/login', authRateLimiter, (req, res) => {
 
   const user = findByUsername(username);
   if (!user || !verifyPassword(user, password)) {
+    // Logs the username as typed, even if it doesn't correspond to a real
+    // account - useful for spotting brute-force/enumeration attempts.
+    logLoginEvent({ username, success: false, reason: 'Invalid username or password', ip: req.ip });
     return res.status(401).json({ error: 'Invalid username or password' });
   }
 
@@ -80,10 +86,13 @@ router.post('/login', authRateLimiter, (req, res) => {
     // Password was correct, but don't establish a real session yet - only
     // a marker saying "this user passed step one," which by itself grants
     // no access (requireLogin checks session.userId, which stays unset).
+    // The real success/failure outcome gets logged at /verify-2fa instead,
+    // once we actually know whether they completed the second factor.
     req.session.pending2FAUserId = user.id;
     return res.json({ requires2FA: true });
   }
 
+  logLoginEvent({ username: user.username, success: true, reason: 'Login successful', ip: req.ip });
   req.session.userId = user.id;
   req.session.username = user.username;
   res.json({ ok: true, username: user.username });
@@ -100,9 +109,16 @@ router.post('/verify-2fa', authRateLimiter, (req, res) => {
   const user = findById(pendingUserId);
 
   if (!user || !secret || !verifyToken(secret, code)) {
+    logLoginEvent({
+      username: user ? user.username : `user #${pendingUserId}`,
+      success: false,
+      reason: 'Invalid 2FA code',
+      ip: req.ip,
+    });
     return res.status(401).json({ error: 'Invalid or expired code' });
   }
 
+  logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA)', ip: req.ip });
   delete req.session.pending2FAUserId;
   req.session.userId = user.id;
   req.session.username = user.username;
@@ -124,8 +140,8 @@ router.post('/change-password', (req, res) => {
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Current and new password are required' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD_LENGTH} characters` });
   }
 
   const user = findById(req.session.userId);
