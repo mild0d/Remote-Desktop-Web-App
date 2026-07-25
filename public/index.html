@@ -559,6 +559,7 @@ function renderConnections() {
     rowsEl.appendChild(col);
   });
   document.getElementById('sort-arrow').textContent = sortAscending ? '▲' : '▼';
+  applyReachabilityResults();
 }
 
 document.getElementById('search-input').addEventListener('input', (e) => {
@@ -582,18 +583,29 @@ async function loadConnections() {
 // Checks all connections' reachability in one request (server does the
 // actual TCP checks in parallel) and colors in each card's dot once the
 // results come back - doesn't block rendering the list itself.
+// Cached separately from the fetch itself, so re-renders triggered by
+// search/tag-filter/sort (which rebuild every card's DOM from scratch)
+// can reapply the last known status immediately without waiting on a new
+// network round-trip - and without resetting every dot back to the grey
+// "checking..." state in the meantime.
+let reachabilityResults = {};
+
+function applyReachabilityResults() {
+  Object.entries(reachabilityResults).forEach(([id, reachable]) => {
+    const dot = document.querySelector(`.reachability-dot[data-reachability-id="${id}"]`);
+    if (!dot) return;
+    dot.classList.remove('reachable', 'unreachable');
+    dot.classList.add(reachable ? 'reachable' : 'unreachable');
+    dot.title = reachable ? 'Reachable' : 'Not reachable';
+  });
+}
+
 async function loadReachability() {
   try {
     const res = await fetch('/api/connections/reachability');
     if (!res.ok) return;
-    const results = await res.json();
-    Object.entries(results).forEach(([id, reachable]) => {
-      const dot = document.querySelector(`.reachability-dot[data-reachability-id="${id}"]`);
-      if (!dot) return;
-      dot.classList.remove('reachable', 'unreachable');
-      dot.classList.add(reachable ? 'reachable' : 'unreachable');
-      dot.title = reachable ? 'Reachable' : 'Not reachable';
-    });
+    reachabilityResults = await res.json();
+    applyReachabilityResults();
   } catch (err) {
     console.warn('Failed to check reachability', err);
   }
