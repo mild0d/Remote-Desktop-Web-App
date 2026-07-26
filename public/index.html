@@ -1508,6 +1508,22 @@ async function openOrFocusSession(id, name) {
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const tunnel = new Guacamole.WebSocketTunnel(`${proto}://${window.location.host}/webtunnel`);
+
+    // Guacamole.Client's constructor does NOT bridge the underlying
+    // tunnel's own onstatechange/onerror into the client's own callbacks -
+    // confirmed by reading the actual library source, it only wires up
+    // tunnel.oninstruction. An abrupt, protocol-silent closure (like an
+    // admin's force-disconnect, which raw-closes the WebSocket server-side
+    // rather than sending a proper Guacamole "disconnect" instruction
+    // first) is therefore only ever visible via the tunnel's own state,
+    // never via client.onstatechange or client.onerror - this is the one
+    // place that actually catches it.
+    tunnel.onstatechange = (tunnelState) => {
+      if (tunnelState === Guacamole.Tunnel.State.CLOSED) {
+        closeSession(key);
+      }
+    };
+
     const client = new Guacamole.Client(tunnel);
     sessions.get(key).client = client;
 
@@ -1535,9 +1551,21 @@ async function openOrFocusSession(id, name) {
           setTimeout(() => captureThumbnail(key), 2000);
           session.thumbnailInterval = setInterval(() => captureThumbnail(key), 20000);
         }
-      } else if (session.thumbnailInterval) {
-        clearInterval(session.thumbnailInterval);
-        session.thumbnailInterval = null;
+      } else {
+        if (session.thumbnailInterval) {
+          clearInterval(session.thumbnailInterval);
+          session.thumbnailInterval = null;
+        }
+        if (state === 5) {
+          // The connection actually ended - whether the user clicked
+          // Disconnect themselves (closeSession() already ran, so this is
+          // a harmless no-op), an admin force-disconnected it from the
+          // active-sessions panel, guacd/the RDP session ended on its own,
+          // or the network dropped. Either way, the tab shouldn't just sit
+          // there showing a dead, frozen screen - clean it up the same way
+          // a manual disconnect does.
+          closeSession(key);
+        }
       }
     };
     client.onerror = (err) => {
@@ -1547,6 +1575,12 @@ async function openOrFocusSession(id, name) {
       session.state = 'error';
       session.statusText = 'Error: ' + (err && err.message ? err.message : 'connection failed');
       updateStatusDisplay(key);
+      // An error here effectively always means the connection is no longer
+      // usable - notably, this is the path an abrupt/forced server-side
+      // close (like an admin's force-disconnect) actually comes through,
+      // rather than a clean state transition to Disconnected. Without
+      // this, the tab would sit there showing a dead session indefinitely.
+      closeSession(key);
     };
 
     // Clipboard sync, direction 1: text copied inside the remote session
