@@ -36,6 +36,18 @@ const authRateLimiter = rateLimit({
   message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
 });
 
+// Separate instance (not the same one used for login/2FA) - registration
+// abuse and login brute-forcing are different concerns, and sharing one
+// counter would mean a few failed login attempts eat into someone's
+// ability to register a new account, or vice versa.
+const registerRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+});
+
 // 2FA is mandatory: nobody reaches req.session.userId (real access) without
 // having totp_enabled. There are two ways into the setup flow that need to
 // share the same /2fa/setup and /2fa/confirm endpoints:
@@ -48,7 +60,7 @@ function getSetupUserId(req) {
   return (req.session && (req.session.pendingSetupUserId || req.session.userId)) || null;
 }
 
-router.post('/register', (req, res) => {
+router.post('/register', registerRateLimiter, (req, res) => {
   if (!getSettings().registration_enabled) {
     return res.status(403).json({ error: 'New registrations are currently disabled' });
   }
@@ -67,12 +79,20 @@ router.post('/register', (req, res) => {
 
   try {
     const user = createUser(username.trim(), password);
-    // No real session yet - 2FA setup is mandatory before this account can
-    // do anything else. The frontend follows this up immediately with a
-    // call to /2fa/setup to get the QR code.
-    req.session.pendingSetupUserId = user.id;
-    logLoginEvent({ username: user.username, success: true, reason: 'Account created - 2FA setup required', ip: req.ip });
-    res.status(201).json({ requiresSetup2FA: true, username: user.username });
+    // A fresh session ID is issued here, before the session gains any
+    // privilege at all (even the limited pendingSetupUserId capability) -
+    // standard defense against session fixation, since regenerate()
+    // guarantees an attacker couldn't have pre-set/known this session ID
+    // in advance.
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'Failed to create session' });
+      // No real session yet - 2FA setup is mandatory before this account
+      // can do anything else. The frontend follows this up immediately
+      // with a call to /2fa/setup to get the QR code.
+      req.session.pendingSetupUserId = user.id;
+      logLoginEvent({ username: user.username, success: true, reason: 'Account created - 2FA setup required', ip: req.ip });
+      res.status(201).json({ requiresSetup2FA: true, username: user.username });
+    });
   } catch (err) {
     if (err.code === 'USERNAME_TAKEN') {
       return res.status(409).json({ error: err.message });
@@ -95,19 +115,25 @@ router.post('/login', authRateLimiter, (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
 
-  if (isTotpEnabled(user.id)) {
-    // Password correct, 2FA already set up - proceed to the code-entry step.
-    req.session.pending2FAUserId = user.id;
-    return res.json({ requires2FA: true });
-  }
+  // Fresh session ID before granting any privilege at all - same
+  // fixation-defense principle as /register.
+  req.session.regenerate((err) => {
+    if (err) return res.status(500).json({ error: 'Failed to create session' });
 
-  // Password correct, but this account doesn't have 2FA yet (pre-existing
-  // account from before this policy, or reset by an admin for recovery).
-  // Mandatory setup, same as a fresh registration - no real access until
-  // it's completed.
-  req.session.pendingSetupUserId = user.id;
-  logLoginEvent({ username: user.username, success: false, reason: 'Password correct - 2FA setup required before access', ip: req.ip });
-  res.json({ requiresSetup2FA: true, username: user.username });
+    if (isTotpEnabled(user.id)) {
+      // Password correct, 2FA already set up - proceed to the code-entry step.
+      req.session.pending2FAUserId = user.id;
+      return res.json({ requires2FA: true });
+    }
+
+    // Password correct, but this account doesn't have 2FA yet (pre-existing
+    // account from before this policy, or reset by an admin for recovery).
+    // Mandatory setup, same as a fresh registration - no real access until
+    // it's completed.
+    req.session.pendingSetupUserId = user.id;
+    logLoginEvent({ username: user.username, success: false, reason: 'Password correct - 2FA setup required before access', ip: req.ip });
+    res.json({ requiresSetup2FA: true, username: user.username });
+  });
 });
 
 router.post('/verify-2fa', authRateLimiter, (req, res) => {
@@ -131,10 +157,16 @@ router.post('/verify-2fa', authRateLimiter, (req, res) => {
   }
 
   logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA)', ip: req.ip });
-  delete req.session.pending2FAUserId;
-  req.session.userId = user.id;
-  req.session.username = user.username;
-  res.json({ ok: true, username: user.username });
+
+  // Fresh session ID before granting real access - regenerate() creates an
+  // entirely new session, so the old pending2FAUserId is naturally gone
+  // without needing an explicit delete.
+  req.session.regenerate((err) => {
+    if (err) return res.status(500).json({ error: 'Failed to create session' });
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    res.json({ ok: true, username: user.username });
+  });
 });
 
 router.post('/logout', (req, res) => {
@@ -257,15 +289,24 @@ router.post('/2fa/confirm', (req, res) => {
   confirmTotp(userId);
 
   // If this completed the mandatory pre-login setup flow, promote the
-  // session to real access now that 2FA is genuinely confirmed.
-  if (req.session.pendingSetupUserId) {
-    delete req.session.pendingSetupUserId;
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA setup completed)', ip: req.ip });
-  }
+  // session to real access now that 2FA is genuinely confirmed. Captured
+  // before regenerate() below, since that creates an entirely fresh
+  // session and would wipe this flag before we got a chance to check it.
+  const wasPendingSetup = Boolean(req.session.pendingSetupUserId);
 
-  res.json({ ok: true });
+  if (wasPendingSetup) {
+    // Fresh session ID before granting real access - same fixation-defense
+    // principle used at every other privilege-transition point in this file.
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'Failed to create session' });
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA setup completed)', ip: req.ip });
+      res.json({ ok: true });
+    });
+  } else {
+    res.json({ ok: true });
+  }
 });
 
 module.exports = router;

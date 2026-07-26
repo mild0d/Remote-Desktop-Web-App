@@ -21,6 +21,18 @@ ensureAtLeastOneAdmin();
 
 const app = express();
 
+// Off by default - only enable this (via TRUST_PROXY=true in .env) if this
+// app is genuinely running behind a trusted reverse proxy (e.g. Traefik,
+// nginx). Without a real proxy in front, blindly trusting the
+// X-Forwarded-For header would let anyone connecting directly just spoof
+// their own IP in that header, defeating rate limiting and making the
+// audit log's IP field meaningless. With trust set, req.ip correctly
+// reflects the real client IP as reported by the proxy instead of the
+// proxy's own IP.
+if (process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
 // Helmet's default Content-Security-Policy would block this app's own
 // frontend outright - the whole thing is built as inline <script
 // type="module"> blocks rather than external .js files, and CSP's default

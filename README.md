@@ -327,6 +327,24 @@ the host yourself. If you're upgrading an existing deployment, just
 `docker compose up -d --build` as usual; the entrypoint script takes care
 of the rest the first time the new container starts.
 
+**Registration is now rate-limited** (10 attempts per 15 minutes per IP,
+tracked separately from the login/2FA limiter), preventing automated mass
+account creation.
+
+**The session ID is regenerated at every privilege transition** - after
+registering, after a successful password check, and after 2FA completes.
+This is standard defense against session fixation: it guarantees an
+attacker could never have pre-set or predicted the session ID a user ends
+up authenticated under.
+
+**`TRUST_PROXY`** (set in `.env`, off by default) - only enable this if
+this app is genuinely running behind a trusted reverse proxy (e.g.
+Traefik, nginx). It tells the app to trust the `X-Forwarded-For` header
+for determining the real client IP, which rate limiting and the audit log
+both rely on. Leave this off if you're accessing the app directly -
+trusting that header without an actual proxy in front would let anyone
+connecting directly just spoof their own IP in it.
+
 Registration is wide open by design (no email verification, no admin
 approval) — anyone who can reach the app can create their own account.
 That's a deliberate simplicity tradeoff, not an oversight. Given that:
