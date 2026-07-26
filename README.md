@@ -1,4 +1,4 @@
-# Remote Desktop Web App (RDP)
+# RDP Web App
 
 A minimal, self-hosted web app for opening RDP sessions from a browser.
 List, add, and delete RDP connections through a single-page UI; click
@@ -195,10 +195,21 @@ A few things worth knowing:
 
 - Use `ldaps://` in the server URL if your domain controller supports
   encrypted LDAP (recommended); `ldap://` otherwise.
+- For `ldaps://`, paste your internal CA's certificate (e.g. from AD
+  Certificate Services) into the **CA certificate** field so this
+  connection can genuinely verify your domain controller's identity. By
+  default, `ldaps://` connections are validated the same way any browser
+  validates HTTPS - if your domain controller's certificate was issued by
+  an internal CA (the normal case for AD), the connection will correctly
+  refuse to proceed until you provide that CA's certificate here. **Skip
+  certificate validation** is available as an explicit, clearly-labeled
+  fallback if you genuinely can't provide it, but that means this
+  connection can no longer confirm it's really talking to your actual
+  domain controller rather than something impersonating it.
 - The bind account only needs read access to browse the directory - it
   doesn't need to be a domain admin.
 - Use **Test connection** in the config screen to confirm the bind
-  credentials actually work before saving.
+  credentials (and certificate, for `ldaps://`) actually work before saving.
 
 ### Share a connection with a teammate
 
@@ -307,6 +318,15 @@ The session cookie is also `SameSite=Lax`, `HttpOnly`, and `Secure` -
 blocking cross-site requests from ever carrying it, inaccessible to
 JavaScript, and never sent over plain HTTP.
 
+**The container runs as a non-root user**, not root. A small entrypoint
+script (`docker-entrypoint.sh`) fixes ownership of the mounted volumes
+(`./data` and the `drive-data` volume) at every container start - both a
+fresh install and an existing install upgrading from before this change
+are handled automatically, without needing to manually `chown` anything on
+the host yourself. If you're upgrading an existing deployment, just
+`docker compose up -d --build` as usual; the entrypoint script takes care
+of the rest the first time the new container starts.
+
 Registration is wide open by design (no email verification, no admin
 approval) — anyone who can reach the app can create their own account.
 That's a deliberate simplicity tradeoff, not an oversight. Given that:
@@ -373,7 +393,8 @@ routes/admin.js            User management + registration toggle + Active Direct
 routes/ad.js               Browse/import from Active Directory (any logged-in user)
 public/login.html         Sign in / register page
 public/index.html         The rest of the frontend: connections list, add/edit modal, multi-tab session viewer
-Dockerfile                Plain node:20-alpine, no native compilation needed
+Dockerfile                node:20-alpine, runs as a non-root user (see Security below)
+docker-entrypoint.sh      Fixes mounted-volume ownership at container startup, then drops to the non-root user
 docker-compose.yml.example   Template - setup copies this to docker-compose.yml on first run
 setup.sh / start.sh / stop.sh                    macOS/Linux one-click scripts
 setup.ps1+.bat, start.ps1+.bat, stop.ps1+.bat     Windows one-click scripts

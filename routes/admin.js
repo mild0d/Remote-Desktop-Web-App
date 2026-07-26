@@ -129,11 +129,11 @@ router.get('/ad-config', (req, res) => {
 });
 
 router.post('/ad-config', (req, res) => {
-  const { url, bindDN, bindPassword, baseDN } = req.body || {};
+  const { url, bindDN, bindPassword, baseDN, caCert, skipCertValidation } = req.body || {};
   if (!url || !bindDN || !baseDN) {
     return res.status(400).json({ error: 'Server URL, bind DN, and base DN are all required' });
   }
-  setADConfig({ url, bindDN, bindPassword, baseDN });
+  setADConfig({ url, bindDN, bindPassword, baseDN, caCert, skipCertValidation });
   res.json({ ok: true });
 });
 

@@ -492,6 +492,27 @@
           <input id="ad-config-basedn" class="form-control" placeholder="dc=example,dc=local" />
           <div class="form-text">Where browsing starts from - usually your domain root.</div>
         </div>
+        <div class="mb-3">
+          <label class="form-label">CA certificate (for ldaps://, optional)</label>
+          <textarea id="ad-config-cacert" class="form-control" rows="4" style="font-family: monospace; font-size: 12px;" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"></textarea>
+          <div class="form-text">
+            Paste your internal CA's certificate (e.g. from AD Certificate
+            Services) so this connection can properly verify your domain
+            controller's identity, rather than skipping that check
+            entirely. Not needed for plain <code>ldap://</code>.
+          </div>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="ad-config-skip-cert-validation" />
+          <label class="form-check-label" for="ad-config-skip-cert-validation">
+            Skip certificate validation <span class="text-danger">(not recommended)</span>
+          </label>
+          <div class="form-text">
+            Only use this if you can't provide the CA certificate above -
+            it means this connection can't confirm it's really talking to
+            your actual domain controller.
+          </div>
+        </div>
         <div class="text-danger small mb-2" id="ad-config-error"></div>
         <div class="text-success small mb-2" id="ad-config-success"></div>
         <div class="app-panel-footer">
@@ -1760,6 +1781,8 @@ const adConfigBindDNInput = document.getElementById('ad-config-binddn');
 const adConfigPasswordInput = document.getElementById('ad-config-password');
 const adConfigPasswordStatus = document.getElementById('ad-config-password-status');
 const adConfigBaseDNInput = document.getElementById('ad-config-basedn');
+const adConfigCACertInput = document.getElementById('ad-config-cacert');
+const adConfigSkipCertValidationInput = document.getElementById('ad-config-skip-cert-validation');
 
 document.getElementById('admin-ad-config-btn').addEventListener('click', async () => {
   adConfigForm.reset();
@@ -1772,6 +1795,8 @@ document.getElementById('admin-ad-config-btn').addEventListener('click', async (
     adConfigUrlInput.value = data.url || '';
     adConfigBindDNInput.value = data.bindDN || '';
     adConfigBaseDNInput.value = data.baseDN || '';
+    adConfigCACertInput.value = data.caCert || '';
+    adConfigSkipCertValidationInput.checked = Boolean(data.skipCertValidation);
     adConfigPasswordStatus.textContent = data.hasPassword
       ? 'A bind password is currently saved.'
       : 'No bind password saved yet.';
@@ -1809,6 +1834,8 @@ adConfigForm.addEventListener('submit', async (e) => {
       bindDN: adConfigBindDNInput.value,
       bindPassword: adConfigPasswordInput.value,
       baseDN: adConfigBaseDNInput.value,
+      caCert: adConfigCACertInput.value,
+      skipCertValidation: adConfigSkipCertValidationInput.checked,
     }),
   });
 
