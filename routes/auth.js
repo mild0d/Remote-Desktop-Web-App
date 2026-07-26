@@ -16,6 +16,11 @@ const {
   getTotpSecret,
   confirmTotp,
   MIN_PASSWORD_LENGTH,
+  isAccountLocked,
+  getLockoutMinutesRemaining,
+  recordFailedLogin,
+  recordSuccessfulLogin,
+  LOCKOUT_DURATION_MS,
 } = require('../lib/users');
 const { getSettings } = require('../lib/settings');
 const { generateSecret, verifyToken, generateQrCodeDataUrl } = require('../lib/totp');
@@ -108,12 +113,38 @@ router.post('/login', authRateLimiter, (req, res) => {
   }
 
   const user = findByUsername(username);
+
+  // Checked before even looking at the password - an account-level lock
+  // stops a distributed attempt (many different source IPs against one
+  // specific account) that the IP-based rate limiter above can't catch,
+  // since that one only tracks per-IP, not per-account.
+  if (user && isAccountLocked(user)) {
+    const minutes = getLockoutMinutesRemaining(user);
+    logLoginEvent({ username: user.username, success: false, reason: 'Blocked - account is locked', ip: req.ip });
+    return res.status(423).json({
+      error: `This account is temporarily locked due to too many failed attempts. Try again in ${minutes} minute(s), or contact an admin.`,
+    });
+  }
+
   if (!user || !verifyPassword(user, password)) {
     // Logs the username as typed, even if it doesn't correspond to a real
     // account - useful for spotting brute-force/enumeration attempts.
+    if (user) {
+      const justLocked = recordFailedLogin(user.username);
+      if (justLocked) {
+        logLoginEvent({ username: user.username, success: false, reason: 'Account locked - too many failed attempts', ip: req.ip });
+        return res.status(423).json({
+          error: `Too many failed attempts. This account is now locked for ${Math.ceil(LOCKOUT_DURATION_MS / 60000)} minutes, or until an admin unlocks it.`,
+        });
+      }
+    }
     logLoginEvent({ username, success: false, reason: 'Invalid username or password', ip: req.ip });
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+
+  // Password was correct - clear any accumulated failed-attempt count so
+  // old typos don't linger toward some future lockout.
+  recordSuccessfulLogin(user.id);
 
   // Fresh session ID before granting any privilege at all - same
   // fixation-defense principle as /register.

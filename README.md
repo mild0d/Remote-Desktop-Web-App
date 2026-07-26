@@ -345,6 +345,18 @@ both rely on. Leave this off if you're accessing the app directly -
 trusting that header without an actual proxy in front would let anyone
 connecting directly just spoof their own IP in it.
 
+**Account-level lockout**, separate from the IP-based rate limiter above -
+that one can't stop a distributed attempt (many different source IPs
+against one specific account), since it only tracks per-IP. After 10
+failed password attempts against the same account (tracked regardless of
+where the attempts came from), that account locks for 30 minutes. An admin
+can unlock it immediately from the admin panel (a **Locked** badge and an
+**Unlock** button appear automatically next to any locked account) rather
+than making someone wait out the full window. The failed-attempt count
+resets to zero after any successful login, so occasional typos over time
+don't quietly accumulate toward a lockout.
+
+
 Registration is wide open by design (no email verification, no admin
 approval) — anyone who can reach the app can create their own account.
 That's a deliberate simplicity tradeoff, not an oversight. Given that:

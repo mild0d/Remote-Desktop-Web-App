@@ -6,6 +6,7 @@ const {
   deleteUser,
   findById,
   disableTotp,
+  adminUnlockAccount,
   MIN_PASSWORD_LENGTH,
 } = require('../lib/users');
 const { getSettings, updateSettings } = require('../lib/settings');
@@ -65,6 +66,17 @@ router.post('/users/:id/disable-2fa', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   disableTotp(userId);
+  res.json({ ok: true });
+});
+
+// Immediately clears an account lockout, rather than making someone wait
+// out the full auto-unlock window.
+router.post('/users/:id/unlock', (req, res) => {
+  const userId = Number(req.params.id);
+  const user = findById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  adminUnlockAccount(userId);
   res.json({ ok: true });
 });
 
