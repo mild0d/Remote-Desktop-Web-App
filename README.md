@@ -102,9 +102,10 @@ Click **⚙️ Settings** next to your username to save, per your own account:
   connection (e.g. typing `server01` becomes `server01.example.local`
   if your suffix is set to `example.local`). Leave blank to disable this and
   always type full hostnames/IPs yourself.
-- **Default NetBIOS domain** — used for every connection's RDP login domain.
-  There's no per-connection override for this anymore; it's set once here
-  and applies to all of your connections.
+- **Default NetBIOS domain** — used as the RDP login domain for any
+  connection that doesn't set its own. Same fallback pattern as
+  username/password: a connection's own Domain field (in the Add/Edit
+  form) takes precedence if set, otherwise this default applies.
 
 These are per-user settings, not shared across accounts — everyone on the
 same AD domain would set the same values, but nothing stops different users

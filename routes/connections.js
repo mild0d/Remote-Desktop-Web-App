@@ -302,17 +302,16 @@ router.get('/:id/token', (req, res) => {
     'disable-upload': 'false',
     'enable-clipboard': 'true',
   };
-  // A connection's own username/password take precedence; if either is
-  // left blank, fall back to the user's centrally-saved default credentials.
-  // Domain is always sourced from Settings now - there's no per-connection
-  // override for it anymore.
+  // A connection's own username/password/domain take precedence; if any
+  // are left blank, fall back to the user's centrally-saved defaults.
   const defaults = getDefaultCredentials(req.session.userId);
   const effectiveUsername = conn.username || defaults.username;
   const effectivePassword = conn.password ? decrypt(conn.password) : defaults.password;
+  const effectiveDomain = conn.domain || defaults.netbios_domain;
 
   if (effectiveUsername) settings.username = effectiveUsername;
   if (effectivePassword) settings.password = effectivePassword;
-  if (defaults.netbios_domain) settings.domain = defaults.netbios_domain;
+  if (effectiveDomain) settings.domain = effectiveDomain;
 
   try {
     // Extra metadata alongside `connection` - guacamole-lite only reads

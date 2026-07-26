@@ -213,6 +213,10 @@
           <input id="f-port" class="form-control" value="3389" />
         </div>
         <div class="mb-3">
+          <label class="form-label">Domain</label>
+          <input id="f-domain" class="form-control" placeholder="Leave blank to use your default domain" />
+        </div>
+        <div class="mb-3">
           <label class="form-label">Username</label>
           <input id="f-username" class="form-control" placeholder="Leave blank to use your default credentials" />
         </div>
@@ -695,6 +699,7 @@ function openModal(existing) {
   document.getElementById('f-icon').value = existing ? existing.icon || '🖥️' : '🖥️';
   document.getElementById('f-hostname').value = existing ? existing.hostname : '';
   document.getElementById('f-port').value = existing ? existing.port : '3389';
+  document.getElementById('f-domain').value = existing ? existing.domain || '' : '';
   document.getElementById('f-username').value = existing ? existing.username || '' : '';
   document.getElementById('f-password').value = '';
   document.getElementById('f-security').value = existing ? existing.security || 'any' : 'any';
@@ -882,6 +887,7 @@ form.addEventListener('submit', async (e) => {
     icon: document.getElementById('f-icon').value,
     hostname: resolveHostname(document.getElementById('f-hostname').value),
     port: parseInt(document.getElementById('f-port').value, 10) || 3389,
+    domain: document.getElementById('f-domain').value,
     username: document.getElementById('f-username').value,
     password: document.getElementById('f-password').value,
     security: document.getElementById('f-security').value,
