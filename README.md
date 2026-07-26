@@ -178,6 +178,28 @@ every card. Select as many as you like, and a bar appears with:
 Click **Clear selection** (or toggle **☑️ Select** off) to exit selection
 mode.
 
+### Import from Active Directory
+
+An admin configures this once (**🛡️ Admin → 🗂️ Active Directory**): your
+domain controller's address, a read-only bind account, and the base DN to
+browse from. Once set up, **any** user can click the **⋮** menu next to
+"+ Add connection" → **Import from Active Directory** for a dual-pane
+browser — folders (OUs) on the left to click into, servers/workstations in
+the currently-selected folder on the right with checkboxes to select. Click
+**Import selected** to add them to your own list. Imported connections get
+no password (same rule as sharing and file import - you use your own
+default credentials) and no tags/notes - a plain starting point you can
+edit afterward if you'd like.
+
+A few things worth knowing:
+
+- Use `ldaps://` in the server URL if your domain controller supports
+  encrypted LDAP (recommended); `ldap://` otherwise.
+- The bind account only needs read access to browse the directory - it
+  doesn't need to be a domain admin.
+- Use **Test connection** in the config screen to confirm the bind
+  credentials actually work before saving.
+
 ### Share a connection with a teammate
 
 Click the **⋮** menu on any connection card → **Share** → pick a teammate
@@ -319,6 +341,8 @@ lib/users.js             Flat JSON file read/write for users (bcrypt hashing, ad
 lib/settings.js           Global app settings (registration on/off)
 lib/auditLog.js           Connection attempt logging (who connected to what, when)
 lib/totp.js               Two-factor authentication (TOTP generation/verification, QR codes)
+lib/adConfig.js           Admin-configured Active Directory connection settings (encrypted bind password)
+lib/adBrowser.js          LDAP browsing of AD OUs/computers via ldapts
 lib/activeSessions.js     In-memory tracking of currently-open RDP sessions (admin visibility + force-disconnect)
 lib/store.js             Flat JSON file read/write for connections (per-user)
 lib/driveStore.js         Per-user shared drive directory helpers (file transfer)
@@ -329,7 +353,8 @@ lib/guacToken.js          Builds the encrypted token guacamole-lite expects
 routes/auth.js            Register/login/logout/me/change-password/default-credentials/2FA (rate-limited)
 routes/connections.js     CRUD for connections (scoped to logged-in user) + session token + reachability endpoint
 routes/files.js            Shared drive upload/list/download/delete (scoped to logged-in user)
-routes/admin.js            User management + registration toggle (admin-only)
+routes/admin.js            User management + registration toggle + Active Directory config (admin-only)
+routes/ad.js               Browse/import from Active Directory (any logged-in user)
 public/login.html         Sign in / register page
 public/index.html         The rest of the frontend: connections list, add/edit modal, multi-tab session viewer
 Dockerfile                Plain node:20-alpine, no native compilation needed

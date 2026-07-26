@@ -192,6 +192,7 @@
 <div id="import-export-menu" class="card-dropdown-style">
   <button id="export-btn">⬇️ Export</button>
   <button id="import-btn">⬆️ Import</button>
+  <button id="import-ad-btn">🗂️ Import from Active Directory</button>
 </div>
 
 <div class="app-overlay" id="modal-backdrop">
@@ -397,6 +398,44 @@
   </div>
 </div>
 
+<div class="app-overlay" id="ad-browse-modal-backdrop">
+  <div class="card" style="width: 760px; max-width: 96vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Import from Active Directory</h2>
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <button type="button" class="btn btn-outline-light btn-sm" id="ad-browse-up-btn" disabled>⬆️ Up</button>
+        <span class="text-secondary small text-truncate" id="ad-browse-path"></span>
+      </div>
+      <div class="text-danger small mb-2" id="ad-browse-error"></div>
+      <div class="row g-2">
+        <div class="col-5">
+          <div class="text-secondary small mb-1">Folders</div>
+          <div style="max-height: 45vh; overflow-y: auto; border: 1px solid var(--bs-border-color); border-radius: 6px;">
+            <table class="table table-hover align-middle mb-0">
+              <tbody id="ad-browse-ou-rows"></tbody>
+            </table>
+            <div class="text-secondary small py-3 text-center d-none" id="ad-browse-ou-empty-hint">No sub-folders.</div>
+          </div>
+        </div>
+        <div class="col-7">
+          <div class="text-secondary small mb-1">Servers / workstations here</div>
+          <div style="max-height: 45vh; overflow-y: auto; border: 1px solid var(--bs-border-color); border-radius: 6px;">
+            <table class="table table-hover align-middle mb-0">
+              <tbody id="ad-browse-computer-rows"></tbody>
+            </table>
+            <div class="text-secondary small py-3 text-center d-none" id="ad-browse-computer-empty-hint">No computers in this folder.</div>
+          </div>
+        </div>
+      </div>
+      <div class="app-panel-footer">
+        <span class="text-secondary small me-auto" id="ad-browse-selected-count">0 selected</span>
+        <button type="button" class="btn btn-outline-light" id="ad-browse-close-btn">Close</button>
+        <button type="button" class="btn btn-primary" id="ad-browse-import-btn">Import selected</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="app-overlay" id="admin-modal-backdrop">
   <div class="card" style="width: 640px; max-width: 92vw;">
     <div class="card-body">
@@ -417,8 +456,50 @@
       <div class="app-panel-footer">
         <button type="button" class="btn btn-outline-light" id="admin-active-sessions-btn">🖥️ Active sessions</button>
         <button type="button" class="btn btn-outline-light" id="admin-audit-log-btn">📋 View audit log</button>
+        <button type="button" class="btn btn-outline-light" id="admin-ad-config-btn">🗂️ Active Directory</button>
         <button type="button" class="btn btn-outline-light" id="admin-close-btn">Close</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="ad-config-modal-backdrop">
+  <div class="card" style="width: 460px; max-width: 92vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Active Directory</h2>
+      <p class="text-secondary small">
+        Configured once here, shared by every user - lets anyone browse and
+        import servers/workstations from your AD without needing their own
+        directory credentials.
+      </p>
+      <form id="ad-config-form">
+        <div class="mb-3">
+          <label class="form-label">Server URL</label>
+          <input id="ad-config-url" class="form-control" placeholder="ldaps://dc01.example.local:636" />
+          <div class="form-text">Use <code>ldaps://</code> (encrypted) if your domain controller supports it, otherwise <code>ldap://</code>.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Bind account (DN)</label>
+          <input id="ad-config-binddn" class="form-control" placeholder="cn=svc-reader,dc=example,dc=local" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Bind password</label>
+          <input id="ad-config-password" type="password" class="form-control" placeholder="Leave blank to keep existing" />
+          <div class="form-text" id="ad-config-password-status"></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Base DN</label>
+          <input id="ad-config-basedn" class="form-control" placeholder="dc=example,dc=local" />
+          <div class="form-text">Where browsing starts from - usually your domain root.</div>
+        </div>
+        <div class="text-danger small mb-2" id="ad-config-error"></div>
+        <div class="text-success small mb-2" id="ad-config-success"></div>
+        <div class="app-panel-footer">
+          <button type="button" class="btn btn-outline-light" id="ad-config-test-btn">Test connection</button>
+          <button type="button" class="btn btn-outline-light" id="ad-config-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -731,6 +812,127 @@ importFileInput.addEventListener('change', async () => {
   } else {
     const data = await res.json().catch(() => ({}));
     alert(data.error || 'Import failed.');
+  }
+});
+
+// --- Import from Active Directory ---
+const adBrowseModalBackdrop = document.getElementById('ad-browse-modal-backdrop');
+const adBrowseOURows = document.getElementById('ad-browse-ou-rows');
+const adBrowseComputerRows = document.getElementById('ad-browse-computer-rows');
+const adBrowseOUEmptyHint = document.getElementById('ad-browse-ou-empty-hint');
+const adBrowseComputerEmptyHint = document.getElementById('ad-browse-computer-empty-hint');
+const adBrowseError = document.getElementById('ad-browse-error');
+const adBrowsePath = document.getElementById('ad-browse-path');
+const adBrowseUpBtn = document.getElementById('ad-browse-up-btn');
+const adBrowseSelectedCountEl = document.getElementById('ad-browse-selected-count');
+
+let adBrowseCurrentDN = null;
+let adBrowseDNStack = []; // parent DNs visited so far, for the Up button
+let adCurrentLevelComputers = []; // this level's computers, looked up by dn when a checkbox toggles
+let adSelectedComputers = new Map(); // dn -> full computer object, across all levels visited this session
+
+function updateADBrowseSelectedCount() {
+  adBrowseSelectedCountEl.textContent = `${adSelectedComputers.size} selected`;
+}
+
+async function loadADBrowse(dn) {
+  adBrowseError.textContent = '';
+  adBrowseOURows.innerHTML = '';
+  adBrowseComputerRows.innerHTML = '';
+
+  const url = dn ? `/api/ad/browse?dn=${encodeURIComponent(dn)}` : '/api/ad/browse';
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    adBrowseError.textContent = data.error || 'Failed to browse Active Directory';
+    adBrowseOUEmptyHint.classList.add('d-none');
+    adBrowseComputerEmptyHint.classList.add('d-none');
+    return;
+  }
+
+  adBrowseCurrentDN = dn || data.baseDN;
+  adBrowsePath.textContent = adBrowseCurrentDN;
+  adBrowseUpBtn.disabled = adBrowseDNStack.length === 0;
+  adCurrentLevelComputers = data.computers;
+
+  adBrowseOUEmptyHint.classList.toggle('d-none', data.ous.length > 0);
+  data.ous.forEach((ou) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="cursor:pointer;" data-ad-open-ou="${escapeHtml(ou.dn)}">📁 ${escapeHtml(ou.name)}</td>`;
+    adBrowseOURows.appendChild(tr);
+  });
+
+  adBrowseComputerEmptyHint.classList.toggle('d-none', data.computers.length > 0);
+  data.computers.forEach((computer) => {
+    const isChecked = adSelectedComputers.has(computer.dn);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="width:32px;"><input type="checkbox" class="form-check-input" data-ad-select="${escapeHtml(computer.dn)}" ${isChecked ? 'checked' : ''} /></td>
+      <td>💻 ${escapeHtml(computer.name)} <span class="text-secondary small">${escapeHtml(computer.operatingSystem || '')}</span></td>`;
+    adBrowseComputerRows.appendChild(tr);
+  });
+}
+
+document.getElementById('import-ad-btn').addEventListener('click', () => {
+  closeImportExportMenu();
+  adSelectedComputers.clear();
+  adBrowseDNStack = [];
+  updateADBrowseSelectedCount();
+  adBrowseModalBackdrop.classList.add('open');
+  loadADBrowse(null);
+});
+
+document.getElementById('ad-browse-close-btn').addEventListener('click', () => {
+  adBrowseModalBackdrop.classList.remove('open');
+});
+
+adBrowseUpBtn.addEventListener('click', () => {
+  const parentDN = adBrowseDNStack.pop();
+  adBrowseUpBtn.disabled = adBrowseDNStack.length === 0;
+  loadADBrowse(parentDN || null);
+});
+
+adBrowseOURows.addEventListener('click', (e) => {
+  const ouDN = e.target.getAttribute('data-ad-open-ou');
+  if (!ouDN) return;
+  adBrowseDNStack.push(adBrowseCurrentDN);
+  loadADBrowse(ouDN);
+});
+
+adBrowseComputerRows.addEventListener('change', (e) => {
+  const dn = e.target.getAttribute('data-ad-select');
+  if (!dn) return;
+  if (e.target.checked) {
+    const computer = adCurrentLevelComputers.find((c) => c.dn === dn);
+    if (computer) adSelectedComputers.set(dn, computer);
+  } else {
+    adSelectedComputers.delete(dn);
+  }
+  updateADBrowseSelectedCount();
+});
+
+document.getElementById('ad-browse-import-btn').addEventListener('click', async () => {
+  if (adSelectedComputers.size === 0) {
+    alert('Select at least one computer to import.');
+    return;
+  }
+
+  const computers = Array.from(adSelectedComputers.values());
+  const res = await fetch('/api/ad/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ computers }),
+  });
+
+  if (res.ok) {
+    const data = await res.json();
+    adBrowseModalBackdrop.classList.remove('open');
+    alert(`Imported ${data.imported} connection(s).`);
+    loadConnections();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    adBrowseError.textContent = data.error || 'Import failed';
   }
 });
 
@@ -1499,6 +1701,76 @@ activeSessionsRows.addEventListener('click', async (e) => {
   } else {
     const data = await res.json().catch(() => ({}));
     activeSessionsError.textContent = data.error || 'Failed to disconnect session';
+  }
+});
+
+// --- Active Directory config (admin) ---
+const adConfigModalBackdrop = document.getElementById('ad-config-modal-backdrop');
+const adConfigForm = document.getElementById('ad-config-form');
+const adConfigError = document.getElementById('ad-config-error');
+const adConfigSuccess = document.getElementById('ad-config-success');
+const adConfigUrlInput = document.getElementById('ad-config-url');
+const adConfigBindDNInput = document.getElementById('ad-config-binddn');
+const adConfigPasswordInput = document.getElementById('ad-config-password');
+const adConfigPasswordStatus = document.getElementById('ad-config-password-status');
+const adConfigBaseDNInput = document.getElementById('ad-config-basedn');
+
+document.getElementById('admin-ad-config-btn').addEventListener('click', async () => {
+  adConfigForm.reset();
+  adConfigError.textContent = '';
+  adConfigSuccess.textContent = '';
+
+  const res = await fetch('/api/admin/ad-config');
+  if (res.ok) {
+    const data = await res.json();
+    adConfigUrlInput.value = data.url || '';
+    adConfigBindDNInput.value = data.bindDN || '';
+    adConfigBaseDNInput.value = data.baseDN || '';
+    adConfigPasswordStatus.textContent = data.hasPassword
+      ? 'A bind password is currently saved.'
+      : 'No bind password saved yet.';
+  }
+  adConfigModalBackdrop.classList.add('open');
+});
+
+document.getElementById('ad-config-cancel-btn').addEventListener('click', () => {
+  adConfigModalBackdrop.classList.remove('open');
+});
+
+document.getElementById('ad-config-test-btn').addEventListener('click', async () => {
+  adConfigError.textContent = '';
+  adConfigSuccess.textContent = 'Testing...';
+  const res = await fetch('/api/admin/ad-config/test', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) {
+    adConfigSuccess.textContent = 'Connection succeeded.';
+  } else {
+    adConfigSuccess.textContent = '';
+    adConfigError.textContent = data.error || 'Connection test failed';
+  }
+});
+
+adConfigForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  adConfigError.textContent = '';
+  adConfigSuccess.textContent = '';
+
+  const res = await fetch('/api/admin/ad-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: adConfigUrlInput.value,
+      bindDN: adConfigBindDNInput.value,
+      bindPassword: adConfigPasswordInput.value,
+      baseDN: adConfigBaseDNInput.value,
+    }),
+  });
+
+  if (res.ok) {
+    adConfigModalBackdrop.classList.remove('open');
+  } else {
+    const data = await res.json().catch(() => ({}));
+    adConfigError.textContent = data.error || 'Failed to save Active Directory settings';
   }
 });
 

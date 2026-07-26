@@ -11,6 +11,8 @@ const {
 const { getSettings, updateSettings } = require('../lib/settings');
 const { getRecentEvents } = require('../lib/auditLog');
 const { listActive, forceDisconnect } = require('../lib/activeSessions');
+const { getConfig: getADConfig, getConfigStatus: getADConfigStatus, setConfig: setADConfig } = require('../lib/adConfig');
+const { testConnection: testADConnection } = require('../lib/adBrowser');
 const { deleteAllForUser: deleteConnectionsForUser } = require('../lib/store');
 const { deleteAllForUser: deleteThumbnailsForUser } = require('../lib/thumbnailStore');
 const { deleteAllForUser: deleteDriveForUser } = require('../lib/driveStore');
@@ -120,6 +122,31 @@ router.post('/active-sessions/:sessionId/disconnect', (req, res) => {
   const found = forceDisconnect(sessionId);
   if (!found) return res.status(404).json({ error: 'Session not found (it may have already ended)' });
   res.json({ ok: true });
+});
+
+router.get('/ad-config', (req, res) => {
+  res.json(getADConfigStatus());
+});
+
+router.post('/ad-config', (req, res) => {
+  const { url, bindDN, bindPassword, baseDN } = req.body || {};
+  if (!url || !bindDN || !baseDN) {
+    return res.status(400).json({ error: 'Server URL, bind DN, and base DN are all required' });
+  }
+  setADConfig({ url, bindDN, bindPassword, baseDN });
+  res.json({ ok: true });
+});
+
+router.post('/ad-config/test', async (req, res) => {
+  const config = getADConfig();
+  if (!config) return res.status(400).json({ error: 'Active Directory is not configured yet' });
+
+  try {
+    await testADConnection(config);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: `Connection failed: ${err.message}` });
+  }
 });
 
 module.exports = router;

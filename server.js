@@ -11,6 +11,7 @@ const authRoutes = require('./routes/auth');
 const connectionRoutes = require('./routes/connections');
 const filesRoutes = require('./routes/files');
 const adminRoutes = require('./routes/admin');
+const adRoutes = require('./routes/ad');
 const { getOrCreateCertificate } = require('./lib/tls');
 const { ensureAtLeastOneAdmin } = require('./lib/users');
 const { register: registerSession, unregister: unregisterSession } = require('./lib/activeSessions');
@@ -37,6 +38,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/connections', requireLogin, connectionRoutes);
 app.use('/api/files', requireLogin, filesRoutes);
 app.use('/api/admin', requireLogin, requireAdmin, adminRoutes);
+app.use('/api/ad', requireLogin, adRoutes);
 
 // Serve the guacamole-common-js ESM build so it can be `import`ed directly
 // by the inline <script type="module"> in index.html.
