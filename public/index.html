@@ -596,6 +596,30 @@
 <script type="module">
 import Guacamole from '/vendor/guacamole-common-js/guacamole-common.min.js';
 
+// Transparently attaches a CSRF token to every state-changing request,
+// without needing to touch any of the many individual fetch() calls
+// throughout this file. Fetches a FRESH token before every mutating
+// request rather than caching one - simpler and more robust than tracking
+// exactly when a cached token might go stale (e.g. session regeneration
+// after login/2FA each issues a new session ID, which would invalidate
+// any token bound to the old one). The extra round-trip this costs per
+// action is negligible for an internal tool like this.
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (url, options = {}) => {
+  const method = (options.method || 'GET').toUpperCase();
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    let csrfToken = '';
+    try {
+      const tokenRes = await originalFetch('/api/auth/csrf-token');
+      if (tokenRes.ok) csrfToken = (await tokenRes.json()).csrfToken;
+    } catch (err) {
+      console.warn('Failed to fetch CSRF token', err);
+    }
+    options = { ...options, headers: { ...(options.headers || {}), 'x-csrf-token': csrfToken } };
+  }
+  return originalFetch(url, options);
+};
+
 const rowsEl = document.getElementById('rows');
 const tagChipsEl = document.getElementById('tag-chips');
 const emptyHint = document.getElementById('empty-hint');

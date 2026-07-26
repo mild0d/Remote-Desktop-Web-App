@@ -375,38 +375,38 @@ router.get('/:id/token', (req, res) => {
   );
   if (!conn) return res.status(404).json({ error: 'Not found' });
 
-  ensureUserDriveDir(req.session.userId);
-
-  const settings = {
-    hostname: conn.hostname,
-    port: String(conn.port),
-    'ignore-cert': conn.ignore_cert ? 'true' : 'false',
-    security: conn.security || 'any',
-    width: String(req.query.width || '1280'),
-    height: String(req.query.height || '800'),
-    dpi: '96',
-    'resize-method': 'display-update',
-    'color-depth': String(conn.color_depth || '16'),
-    'enable-drive': 'true',
-    'drive-path': userDrivePathForGuacd(req.session.userId),
-    'create-drive-path': 'true',
-    'drive-name': 'Shared Drive',
-    'disable-download': 'false',
-    'disable-upload': 'false',
-    'enable-clipboard': 'true',
-  };
-  // A connection's own username/password/domain take precedence; if any
-  // are left blank, fall back to the user's centrally-saved defaults.
-  const defaults = getDefaultCredentials(req.session.userId);
-  const effectiveUsername = conn.username || defaults.username;
-  const effectivePassword = conn.password ? decrypt(conn.password) : defaults.password;
-  const effectiveDomain = conn.domain || defaults.netbios_domain;
-
-  if (effectiveUsername) settings.username = effectiveUsername;
-  if (effectivePassword) settings.password = effectivePassword;
-  if (effectiveDomain) settings.domain = effectiveDomain;
-
   try {
+    ensureUserDriveDir(req.session.userId);
+
+    const settings = {
+      hostname: conn.hostname,
+      port: String(conn.port),
+      'ignore-cert': conn.ignore_cert ? 'true' : 'false',
+      security: conn.security || 'any',
+      width: String(req.query.width || '1280'),
+      height: String(req.query.height || '800'),
+      dpi: '96',
+      'resize-method': 'display-update',
+      'color-depth': String(conn.color_depth || '16'),
+      'enable-drive': 'true',
+      'drive-path': userDrivePathForGuacd(req.session.userId),
+      'create-drive-path': 'true',
+      'drive-name': 'Shared Drive',
+      'disable-download': 'false',
+      'disable-upload': 'false',
+      'enable-clipboard': 'true',
+    };
+    // A connection's own username/password/domain take precedence; if any
+    // are left blank, fall back to the user's centrally-saved defaults.
+    const defaults = getDefaultCredentials(req.session.userId);
+    const effectiveUsername = conn.username || defaults.username;
+    const effectivePassword = conn.password ? decrypt(conn.password) : defaults.password;
+    const effectiveDomain = conn.domain || defaults.netbios_domain;
+
+    if (effectiveUsername) settings.username = effectiveUsername;
+    if (effectivePassword) settings.password = effectivePassword;
+    if (effectiveDomain) settings.domain = effectiveDomain;
+
     // Extra metadata alongside `connection` - guacamole-lite only reads
     // known keys off the decrypted payload and ignores the rest, so this
     // rides along safely and becomes available via clientConnection
@@ -429,7 +429,8 @@ router.get('/:id/token', (req, res) => {
     });
     res.json({ token });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Failed to generate connection token:', err);
+    res.status(500).json({ error: 'Failed to generate connection token' });
   }
 });
 

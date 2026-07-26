@@ -4,10 +4,12 @@ const path = require('path');
 const https = require('https');
 const express = require('express');
 const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const GuacamoleLite = require('guacamole-lite');
 
 const { requireLogin, requireAdmin } = require('./lib/auth');
+const { doubleCsrfProtection, invalidCsrfTokenError } = require('./lib/csrf');
 const authRoutes = require('./routes/auth');
 const connectionRoutes = require('./routes/connections');
 const filesRoutes = require('./routes/files');
@@ -57,6 +59,7 @@ app.use(
 );
 
 app.use(express.json({ limit: '10mb' })); // base64 PNG screenshots exceed the 100kb default
+app.use(cookieParser()); // needed for csrf-csrf's double-submit cookie
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'change-this-session-secret',
@@ -72,6 +75,14 @@ app.use(
     },
   })
 );
+
+// Defense-in-depth on top of the SameSite=Lax cookie above - a second,
+// independently-verifiable layer against cross-site request forgery.
+// Applied globally rather than per-route so nothing can be missed:
+// GET/HEAD/OPTIONS are exempt by default (this library's own behavior,
+// verified before relying on it), so this only affects state-changing
+// requests, and only after both cookie-parser and session have run.
+app.use(doubleCsrfProtection);
 
 // Auth routes (login/register/logout/me) are open; everything else under
 // /api requires a session.
@@ -101,6 +112,23 @@ app.use('/vendor/bootstrap/js', express.static(path.join(__dirname, 'node_module
 app.get('/', requireLogin, (req, res, next) => next());
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Catch-all error handler - must be defined last, after every route and
+// other middleware, and must take exactly 4 arguments for Express to
+// recognize it as an error handler rather than regular middleware.
+// Without this, an error that isn't caught by a route's own try/catch
+// would fall through to Express's own default handler, which - unless
+// NODE_ENV is explicitly "production" - includes the full stack trace
+// in the response body. This guarantees that never happens regardless of
+// environment configuration, rather than relying on NODE_ENV alone.
+app.use((err, req, res, next) => {
+  if (err === invalidCsrfTokenError) {
+    return res.status(403).json({ error: 'Invalid or missing CSRF token. Please refresh the page and try again.' });
+  }
+  console.error('Unhandled error:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Something went wrong. Please try again.' });
+});
 
 const { cert, key } = getOrCreateCertificate();
 const server = https.createServer({ cert, key }, app);

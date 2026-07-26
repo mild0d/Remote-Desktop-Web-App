@@ -1,5 +1,11 @@
 FROM node:20-alpine
 
+# Belt-and-suspenders alongside the explicit global error handler in
+# server.js - Express's own default error handler (which would only ever
+# fire if something slipped past that handler somehow) includes a full
+# stack trace in the response unless this is explicitly "production".
+ENV NODE_ENV=production
+
 # su-exec is the standard, lightweight Alpine tool for dropping from root to
 # another user before exec'ing the final process - much smaller than gosu,
 # and the normal recommended approach for Alpine-based images specifically.

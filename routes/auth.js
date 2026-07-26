@@ -5,6 +5,7 @@ const {
   findById,
   createUser,
   verifyPassword,
+  verifyLoginPassword,
   changePassword,
   setDefaultCredentials,
   getDefaultCredentialsStatus,
@@ -25,6 +26,7 @@ const {
 const { getSettings } = require('../lib/settings');
 const { generateSecret, verifyToken, generateQrCodeDataUrl } = require('../lib/totp');
 const { logLoginEvent } = require('../lib/auditLog');
+const { generateCsrfToken } = require('../lib/csrf');
 
 const router = express.Router();
 
@@ -64,6 +66,20 @@ const registerRateLimiter = rateLimit({
 function getSetupUserId(req) {
   return (req.session && (req.session.pendingSetupUserId || req.session.userId)) || null;
 }
+
+// Reachable without a session - even a brand new, anonymous visitor needs
+// a token before their very first login/register attempt. Explicitly
+// marks the session as touched before generating the token: with
+// saveUninitialized:false, a session that's never actually modified never
+// gets its cookie sent to the client, which would mean the session ID
+// this token is bound to could never be recognized by the browser's next
+// request. Confirmed this exact failure mode via direct testing before
+// settling on this fix.
+router.get('/csrf-token', (req, res) => {
+  req.session.csrfTokenIssued = true;
+  const csrfToken = generateCsrfToken(req, res);
+  res.json({ csrfToken });
+});
 
 router.post('/register', registerRateLimiter, (req, res) => {
   if (!getSettings().registration_enabled) {
@@ -126,7 +142,7 @@ router.post('/login', authRateLimiter, (req, res) => {
     });
   }
 
-  if (!user || !verifyPassword(user, password)) {
+  if (!verifyLoginPassword(user, password)) {
     // Logs the username as typed, even if it doesn't correspond to a real
     // account - useful for spotting brute-force/enumeration attempts.
     if (user) {

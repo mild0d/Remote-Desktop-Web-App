@@ -85,6 +85,30 @@
   </div>
 
   <script>
+    // Transparently attaches a CSRF token to every state-changing request,
+    // without needing to touch any of the individual fetch() calls below.
+    // Fetches a FRESH token before every mutating request rather than
+    // caching one - simpler and more robust than trying to track exactly
+    // when a cached token might go stale (e.g. session regeneration after
+    // register/login/2FA each issue a new session ID, which would
+    // invalidate any token bound to the old one). The extra round-trip
+    // this costs per action is negligible for an internal tool like this.
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (url, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        let csrfToken = '';
+        try {
+          const tokenRes = await originalFetch('/api/auth/csrf-token');
+          if (tokenRes.ok) csrfToken = (await tokenRes.json()).csrfToken;
+        } catch (err) {
+          console.warn('Failed to fetch CSRF token', err);
+        }
+        options = { ...options, headers: { ...(options.headers || {}), 'x-csrf-token': csrfToken } };
+      }
+      return originalFetch(url, options);
+    };
+
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
     const twofaForm = document.getElementById('twofa-form');

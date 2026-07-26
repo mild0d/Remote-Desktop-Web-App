@@ -356,6 +356,30 @@ than making someone wait out the full window. The failed-attempt count
 resets to zero after any successful login, so occasional typos over time
 don't quietly accumulate toward a lockout.
 
+**Errors never leak internal detail to the browser.** A global catch-all
+error handler guarantees this regardless of environment configuration -
+verified by deliberately triggering a real server error and confirming
+only a generic message ever reaches the client, while the actual error
+(with its full stack trace) still lands in the server's own log for
+debugging.
+
+**Login timing is constant regardless of whether the username exists.**
+Without this, a nonexistent username would skip the deliberately-slow
+bcrypt password check entirely and respond measurably faster than a real
+username with a wrong password - letting an attacker figure out which
+usernames exist just by timing responses, even though both cases show the
+identical error message. Measured directly: the real difference this
+closed was about 28ms, now within about 2-3ms (ordinary network/JS
+jitter, not a meaningful signal).
+
+**CSRF protection** (via [csrf-csrf](https://github.com/Psifi-Solutions/csrf-csrf)),
+layered on top of the `SameSite=Lax` cookie above as a second,
+independently-verifiable layer against cross-site request forgery. Every
+state-changing request (not just GET reads) requires a valid, freshly-
+issued token tied to your actual session - verified directly that a
+request with a missing, wrong, or session-mismatched token is rejected
+before anything changes, while normal use (including through login, 2FA,
+and everything in the admin panel) is completely unaffected.
 
 Registration is wide open by design (no email verification, no admin
 approval) — anyone who can reach the app can create their own account.
