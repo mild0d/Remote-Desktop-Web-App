@@ -93,6 +93,18 @@
   .reachability-dot.reachable { background: var(--bs-success); }
   .reachability-dot.unreachable { background: var(--bs-danger); }
 
+  .select-checkbox-wrap {
+    display: none;
+    position: absolute; top: 8px; left: 8px; z-index: 2;
+    background: rgba(0, 0, 0, 0.55); border-radius: 4px; padding: 4px;
+  }
+  #rows.select-mode .select-checkbox-wrap { display: block; }
+  #rows.select-mode .card { outline: 2px solid transparent; }
+  #rows.select-mode .card.selected { outline-color: var(--bs-primary); }
+
+  #bulk-action-bar { display: none; }
+  #bulk-action-bar.show { display: flex; }
+
   .card-dropdown-style {
     display: none;
     position: fixed; z-index: 1060; min-width: 110px;
@@ -148,12 +160,20 @@
             <input type="search" class="form-control form-control-sm" id="search-input" placeholder="Search connections..." style="width: 220px;" />
           </div>
           <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-light btn-sm" id="select-mode-toggle-btn">☑️ Select</button>
             <button class="btn btn-outline-light btn-sm" id="import-export-toggle-btn" title="Import / Export">⋮</button>
             <input type="file" id="import-file-input" accept="application/json" class="d-none" />
             <button class="btn btn-primary btn-sm" id="add-btn">+ Add connection</button>
           </div>
         </div>
         <div id="tag-chips" class="d-flex flex-wrap gap-2 mt-2 d-none"></div>
+        <div id="bulk-action-bar" class="align-items-center gap-2 mt-2 p-2 rounded" style="background: var(--bs-tertiary-bg);">
+          <span class="small text-secondary" id="bulk-selected-count">0 selected</span>
+          <button class="btn btn-outline-light btn-sm" id="bulk-tag-btn">Add tag</button>
+          <button class="btn btn-outline-light btn-sm" id="bulk-share-btn">Share</button>
+          <button class="btn btn-outline-light btn-sm" id="bulk-delete-btn">Delete</button>
+          <button class="btn btn-outline-light btn-sm ms-auto" id="bulk-clear-btn">Clear selection</button>
+        </div>
       </div>
       <div id="rows" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-xl-4 g-3"></div>
       <div class="text-secondary small py-3 d-none" id="empty-hint">No saved connections yet. Click "+ Add connection" to create one.</div>
@@ -503,6 +523,7 @@ let currentConns = [];
 let sortAscending = true;
 let searchQuery = '';
 let selectedTag = null;
+let selectedConnectionIds = new Set();
 
 function renderTagChips() {
   const allTags = new Set();
@@ -569,8 +590,11 @@ function renderConnections() {
     // Cache-busting query param so a freshly captured screenshot doesn't
     // get served from the browser's own image cache for this <img> tag.
     col.innerHTML = `
-      <div class="card h-100">
+      <div class="card h-100 ${selectedConnectionIds.has(c.id) ? 'selected' : ''}">
         <div class="thumbnail-box">
+          <div class="select-checkbox-wrap">
+            <input type="checkbox" class="form-check-input" data-select-checkbox="${c.id}" ${selectedConnectionIds.has(c.id) ? 'checked' : ''} style="width: 1.2rem; height: 1.2rem;" />
+          </div>
           <img src="/api/connections/${c.id}/thumbnail?t=${Date.now()}"
                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
           <div class="thumbnail-placeholder">${c.icon || '🖥️'}</div>
@@ -751,6 +775,108 @@ rowsEl.addEventListener('click', async (e) => {
   if (connectId) {
     const name = e.target.getAttribute('data-name');
     openOrFocusSession(connectId, name);
+  }
+});
+
+// --- Bulk selection ---
+const bulkActionBar = document.getElementById('bulk-action-bar');
+const bulkSelectedCount = document.getElementById('bulk-selected-count');
+
+function updateBulkActionBar() {
+  const count = selectedConnectionIds.size;
+  bulkSelectedCount.textContent = `${count} selected`;
+  bulkActionBar.classList.toggle('show', count > 0);
+}
+
+document.getElementById('select-mode-toggle-btn').addEventListener('click', () => {
+  const turningOff = rowsEl.classList.contains('select-mode');
+  rowsEl.classList.toggle('select-mode');
+  if (turningOff) {
+    selectedConnectionIds.clear();
+    updateBulkActionBar();
+    renderConnections();
+  }
+});
+
+rowsEl.addEventListener('change', (e) => {
+  const id = e.target.getAttribute('data-select-checkbox');
+  if (!id) return;
+  const numId = Number(id);
+  if (e.target.checked) {
+    selectedConnectionIds.add(numId);
+  } else {
+    selectedConnectionIds.delete(numId);
+  }
+  e.target.closest('.card').classList.toggle('selected', e.target.checked);
+  updateBulkActionBar();
+});
+
+document.getElementById('bulk-clear-btn').addEventListener('click', () => {
+  selectedConnectionIds.clear();
+  updateBulkActionBar();
+  renderConnections();
+});
+
+document.getElementById('bulk-delete-btn').addEventListener('click', async () => {
+  const count = selectedConnectionIds.size;
+  if (!confirm(`Delete ${count} connection(s)? This cannot be undone.`)) return;
+  await fetch('/api/connections/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: Array.from(selectedConnectionIds) }),
+  });
+  selectedConnectionIds.clear();
+  updateBulkActionBar();
+  loadConnections();
+});
+
+document.getElementById('bulk-tag-btn').addEventListener('click', async () => {
+  const input = prompt('Add tag(s) to the selected connections (comma-separated):');
+  if (input === null) return;
+  const tags = input.split(',').map((t) => t.trim()).filter(Boolean);
+  if (tags.length === 0) return;
+
+  const res = await fetch('/api/connections/bulk-tag', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: Array.from(selectedConnectionIds), tags }),
+  });
+  if (res.ok) {
+    loadConnections();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    alert(data.error || 'Failed to tag connections');
+  }
+});
+
+document.getElementById('bulk-share-btn').addEventListener('click', async () => {
+  const res = await fetch('/api/connections/share-targets');
+  const targets = res.ok ? await res.json() : [];
+  if (targets.length === 0) {
+    alert('No other users to share with yet.');
+    return;
+  }
+
+  const list = targets.map((u, i) => `${i + 1}. ${u.username}`).join('\n');
+  const choice = prompt(`Share ${selectedConnectionIds.size} connection(s) with which user?\n${list}\n\nEnter a number:`);
+  if (choice === null) return;
+  const target = targets[Number(choice) - 1];
+  if (!target) {
+    alert('Invalid selection.');
+    return;
+  }
+
+  const shareRes = await fetch('/api/connections/bulk-share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: Array.from(selectedConnectionIds), targetUserId: target.id }),
+  });
+  if (shareRes.ok) {
+    const data = await shareRes.json();
+    alert(`Shared ${data.shared} connection(s) with ${data.sharedWith}.`);
+  } else {
+    const data = await shareRes.json().catch(() => ({}));
+    alert(data.error || 'Failed to share connections');
   }
 });
 

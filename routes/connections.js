@@ -153,6 +153,95 @@ router.get('/share-targets', (req, res) => {
   res.json(targets);
 });
 
+// Every bulk endpoint below individually ownership-checks each id against
+// the current user, rather than trusting the list wholesale - the ids come
+// from the user's own already-filtered UI, but a tampered request
+// shouldn't be able to affect another user's connections just by
+// including their ids in the array.
+
+router.post('/bulk-delete', (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids)) {
+    return res.status(400).json({ error: 'Expected an array of ids' });
+  }
+
+  const list = loadAll();
+  const idSet = new Set(ids.map(Number));
+  let deleted = 0;
+
+  const kept = list.filter((c) => {
+    const isTargeted = idSet.has(c.id) && c.user_id === req.session.userId;
+    if (isTargeted) deleted += 1;
+    return !isTargeted;
+  });
+
+  saveAll(kept);
+  res.json({ ok: true, deleted });
+});
+
+router.post('/bulk-tag', (req, res) => {
+  const { ids, tags } = req.body || {};
+  if (!Array.isArray(ids) || !Array.isArray(tags) || tags.length === 0) {
+    return res.status(400).json({ error: 'Expected an array of ids and a non-empty array of tags' });
+  }
+
+  const list = loadAll();
+  const idSet = new Set(ids.map(Number));
+  let tagged = 0;
+
+  list.forEach((c) => {
+    if (idSet.has(c.id) && c.user_id === req.session.userId) {
+      const existing = new Set(Array.isArray(c.tags) ? c.tags : []);
+      tags.forEach((t) => existing.add(String(t)));
+      c.tags = Array.from(existing);
+      tagged += 1;
+    }
+  });
+
+  saveAll(list);
+  res.json({ ok: true, tagged });
+});
+
+router.post('/bulk-share', (req, res) => {
+  const { ids, targetUserId } = req.body || {};
+  if (!Array.isArray(ids)) {
+    return res.status(400).json({ error: 'Expected an array of ids' });
+  }
+
+  const targetUser = findUserById(Number(targetUserId));
+  if (!targetUser) return res.status(400).json({ error: 'That user was not found' });
+  if (targetUser.id === req.session.userId) {
+    return res.status(400).json({ error: 'You cannot share a connection with yourself' });
+  }
+
+  const list = loadAll();
+  const idSet = new Set(ids.map(Number));
+  const ownedConnections = list.filter((c) => idSet.has(c.id) && c.user_id === req.session.userId);
+
+  ownedConnections.forEach((conn) => {
+    list.push({
+      id: nextId(list),
+      user_id: targetUser.id,
+      name: conn.name,
+      hostname: conn.hostname,
+      port: conn.port,
+      username: conn.username || '',
+      password: '', // intentionally never shared, same as the single-share endpoint
+      domain: conn.domain || '',
+      security: conn.security || 'any',
+      ignore_cert: conn.ignore_cert,
+      color_depth: conn.color_depth || '16',
+      icon: conn.icon || '🖥️',
+      notes: conn.notes || '',
+      tags: Array.isArray(conn.tags) ? conn.tags : [],
+      created_at: new Date().toISOString(),
+    });
+  });
+
+  saveAll(list);
+  res.json({ ok: true, shared: ownedConnections.length, sharedWith: targetUser.username });
+});
+
 router.get('/:id', (req, res) => {
   const conn = loadAll().find(
     (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId

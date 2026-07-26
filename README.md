@@ -159,6 +159,23 @@ to filter down to just connections with that tag; click it again to clear
 the filter. Both are included in export/import, so a shared server list
 keeps its organization when a teammate imports it.
 
+### Bulk actions
+
+Click **☑️ Select** above the connections grid to reveal a checkbox on
+every card. Select as many as you like, and a bar appears with:
+
+- **Add tag** — adds one or more tags to every selected connection at
+  once, merging with whatever tags each one already has (never replaces
+  existing tags)
+- **Share** — shares copies of every selected connection with one
+  teammate in a single action (same no-password-transfer rule as sharing
+  one at a time)
+- **Delete** — deletes every selected connection at once, with a single
+  confirmation
+
+Click **Clear selection** (or toggle **☑️ Select** off) to exit selection
+mode.
+
 ### Share a connection with a teammate
 
 Click the **⋮** menu on any connection card → **Share** → pick a teammate
