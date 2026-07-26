@@ -1,4 +1,4 @@
-# RDP Web App
+# Remote Desktop Web App (RDP)
 
 A minimal, self-hosted web app for opening RDP sessions from a browser.
 List, add, and delete RDP connections through a single-page UI; click
