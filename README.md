@@ -331,9 +331,32 @@ routes/admin.js            User management + registration toggle (admin-only)
 public/login.html         Sign in / register page
 public/index.html         The rest of the frontend: connections list, add/edit modal, multi-tab session viewer
 Dockerfile                Plain node:20-alpine, no native compilation needed
-docker-compose.yml        guacd + webapp services
+docker-compose.yml.example   Template - setup copies this to docker-compose.yml on first run
 setup.sh / start.sh / stop.sh                    macOS/Linux one-click scripts
 setup.ps1+.bat, start.ps1+.bat, stop.ps1+.bat     Windows one-click scripts
+```
+
+## Customizing your deployment
+
+`docker-compose.yml` is generated from `docker-compose.yml.example` the
+first time you run setup, and is gitignored from there on. This means you
+can freely edit the real `docker-compose.yml` afterward — for example,
+adding labels for a reverse proxy like Traefik or nginx-proxy-manager — and
+`git pull`ing future updates to this repo won't conflict with or overwrite
+your local customizations, since git was never tracking your copy in the
+first place. If you ever want to see what changed in the template itself,
+compare against `docker-compose.yml.example`.
+
+If you're maintaining your own fork/clone of this repo in git, one other
+thing worth doing once: make sure `setup.sh`, `start.sh`, and `stop.sh` are
+tracked as executable in git itself, not just on your local filesystem —
+otherwise anyone who clones the repo fresh will need to manually
+`chmod +x` those files before running them, and on Windows in particular,
+git often ignores local `chmod` changes entirely by default (controlled by
+the `core.fileMode` setting) unless told explicitly:
+```bash
+git update-index --chmod=+x setup.sh start.sh stop.sh
+git commit -m "Track setup/start/stop scripts as executable"
 ```
 
 ## Troubleshooting

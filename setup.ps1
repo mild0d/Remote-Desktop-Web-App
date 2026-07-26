@@ -139,6 +139,13 @@ SESSION_SECRET=$sessionSecret
 
 New-Item -ItemType Directory -Force -Path "data" | Out-Null
 
+if (-not (Test-Path "docker-compose.yml")) {
+    Write-Host "Generating docker-compose.yml from the template..."
+    Copy-Item "docker-compose.yml.example" "docker-compose.yml"
+} else {
+    Write-Host "docker-compose.yml already exists - leaving it untouched (edit it directly for local customizations, e.g. reverse proxy labels)."
+}
+
 Write-Host ""
 Write-Host "Building and starting containers (this pulls guacd and builds the webapp image)..."
 docker compose up -d --build

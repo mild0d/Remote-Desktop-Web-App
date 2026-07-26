@@ -41,6 +41,13 @@ fi
 
 mkdir -p data
 
+if [ ! -f docker-compose.yml ]; then
+  echo "Generating docker-compose.yml from the template..."
+  cp docker-compose.yml.example docker-compose.yml
+else
+  echo "docker-compose.yml already exists, leaving it untouched (edit it directly for local customizations, e.g. reverse proxy labels)."
+fi
+
 echo "Building and starting containers..."
 docker compose up -d --build
 
