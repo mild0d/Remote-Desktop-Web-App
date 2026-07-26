@@ -118,7 +118,9 @@ responds on its configured port, red if it doesn't. This is a plain TCP
 connection attempt (not a real RDP handshake), so it tells you whether
 *something* is listening there, not whether RDP itself would actually
 succeed. Checks run automatically whenever the connections list loads or
-refreshes, all in parallel server-side in a single request.
+refreshes, all in parallel server-side in a single request. Hover over the
+dot for a bit more detail: response time in milliseconds (for a reachable
+host) and how long ago the check was actually performed.
 
 ### Two-factor authentication (required)
 

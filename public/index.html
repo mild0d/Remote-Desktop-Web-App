@@ -647,12 +647,16 @@ async function loadConnections() {
 let reachabilityResults = {};
 
 function applyReachabilityResults() {
-  Object.entries(reachabilityResults).forEach(([id, reachable]) => {
+  Object.entries(reachabilityResults).forEach(([id, result]) => {
     const dot = document.querySelector(`.reachability-dot[data-reachability-id="${id}"]`);
     if (!dot) return;
+    const { reachable, latencyMs, checkedAt } = result;
     dot.classList.remove('reachable', 'unreachable');
     dot.classList.add(reachable ? 'reachable' : 'unreachable');
-    dot.title = reachable ? 'Reachable' : 'Not reachable';
+
+    const statusLine = reachable ? `Reachable (${latencyMs}ms)` : 'Not reachable';
+    const checkedLine = checkedAt ? `Checked ${formatDuration(checkedAt)} ago` : '';
+    dot.title = [statusLine, checkedLine].filter(Boolean).join('\n');
   });
 }
 

@@ -19,12 +19,14 @@ function checkReachable(hostname, port, timeoutMs = 2000) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
     let settled = false;
+    const startedAt = Date.now();
 
-    const finish = (result) => {
+    const finish = (reachable) => {
       if (settled) return;
       settled = true;
+      const latencyMs = Date.now() - startedAt;
       socket.destroy();
-      resolve(result);
+      resolve({ reachable, latencyMs: reachable ? latencyMs : null });
     };
 
     socket.setTimeout(timeoutMs);
@@ -56,9 +58,11 @@ router.get('/', (req, res) => {
 router.get('/reachability', async (req, res) => {
   const list = loadAll().filter((c) => c.user_id === req.session.userId);
   const results = {};
+  const checkedAt = new Date().toISOString();
   await Promise.all(
     list.map(async (c) => {
-      results[c.id] = await checkReachable(c.hostname, c.port);
+      const { reachable, latencyMs } = await checkReachable(c.hostname, c.port);
+      results[c.id] = { reachable, latencyMs, checkedAt };
     })
   );
   res.json(results);
