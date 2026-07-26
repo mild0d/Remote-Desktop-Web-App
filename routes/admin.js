@@ -17,6 +17,7 @@ const { testConnection: testADConnection } = require('../lib/adBrowser');
 const { deleteAllForUser: deleteConnectionsForUser } = require('../lib/store');
 const { deleteAllForUser: deleteThumbnailsForUser } = require('../lib/thumbnailStore');
 const { deleteAllForUser: deleteDriveForUser } = require('../lib/driveStore');
+const backup = require('../lib/backup');
 
 const router = express.Router();
 
@@ -158,6 +159,59 @@ router.post('/ad-config/test', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: `Connection failed: ${err.message}` });
+  }
+});
+
+router.get('/backup-settings', (req, res) => {
+  res.json({
+    settings: backup.getSettings(),
+    backups: backup.listBackups(),
+  });
+});
+
+router.post('/backup-settings', (req, res) => {
+  const { enabled, interval_hours, retention_count } = req.body || {};
+
+  if (interval_hours !== undefined && (!Number.isFinite(interval_hours) || interval_hours < 1)) {
+    return res.status(400).json({ error: 'Interval must be at least 1 hour' });
+  }
+  if (retention_count !== undefined && (!Number.isFinite(retention_count) || retention_count < 1)) {
+    return res.status(400).json({ error: 'Retention count must be at least 1' });
+  }
+
+  const updated = backup.setSettings({
+    enabled: Boolean(enabled),
+    ...(interval_hours !== undefined ? { interval_hours } : {}),
+    ...(retention_count !== undefined ? { retention_count } : {}),
+  });
+  res.json({ ok: true, settings: updated });
+});
+
+router.post('/backup/create', async (req, res) => {
+  try {
+    const result = await backup.createBackup();
+    const settings = backup.getSettings();
+    backup.setSettings({ last_backup_at: new Date().toISOString() });
+    const pruned = backup.pruneOldBackups(settings.retention_count);
+    res.json({ ok: true, filename: result.filename, size: result.size, pruned });
+  } catch (err) {
+    console.error('Manual backup failed:', err);
+    res.status(500).json({ error: 'Failed to create backup' });
+  }
+});
+
+router.get('/backup/:filename/download', (req, res) => {
+  const fullPath = backup.getBackupPath(req.params.filename);
+  if (!fullPath) return res.status(404).json({ error: 'Backup not found' });
+  res.download(fullPath, req.params.filename);
+});
+
+router.delete('/backup/:filename', (req, res) => {
+  try {
+    backup.deleteBackup(req.params.filename);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(404).json({ error: 'Backup not found' });
   }
 });
 

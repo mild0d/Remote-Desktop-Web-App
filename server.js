@@ -18,8 +18,10 @@ const adRoutes = require('./routes/ad');
 const { getOrCreateCertificate } = require('./lib/tls');
 const { ensureAtLeastOneAdmin } = require('./lib/users');
 const { register: registerSession, unregister: unregisterSession } = require('./lib/activeSessions');
+const { startScheduler: startBackupScheduler } = require('./lib/backup');
 
 ensureAtLeastOneAdmin();
+startBackupScheduler();
 
 const app = express();
 

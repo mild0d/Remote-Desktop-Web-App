@@ -457,7 +457,51 @@
         <button type="button" class="btn btn-outline-light" id="admin-active-sessions-btn">🖥️ Active sessions</button>
         <button type="button" class="btn btn-outline-light" id="admin-audit-log-btn">📋 View audit log</button>
         <button type="button" class="btn btn-outline-light" id="admin-ad-config-btn">🗂️ Active Directory</button>
+        <button type="button" class="btn btn-outline-light" id="admin-backups-btn">💾 Backups</button>
         <button type="button" class="btn btn-outline-light" id="admin-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="backups-modal-backdrop">
+  <div class="card" style="width: 620px; max-width: 94vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Backups</h2>
+      <p class="text-secondary small">
+        Creates a zip snapshot of everything in <code>data/</code> - users,
+        connections, settings, audit log, and TLS cert. Does not include
+        the shared drive contents.
+      </p>
+      <form id="backup-settings-form" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="backup-enabled" />
+          <label class="form-check-label" for="backup-enabled">Automatic backups</label>
+        </div>
+        <div>
+          <label class="form-label small mb-0">Every</label>
+          <select id="backup-interval" class="form-select form-select-sm">
+            <option value="24">24 hours</option>
+            <option value="168">Week</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label small mb-0">Keep last</label>
+          <input type="number" id="backup-retention" class="form-control form-control-sm" style="width: 80px;" min="1" value="7" />
+        </div>
+        <button type="submit" class="btn btn-outline-light btn-sm">Save</button>
+        <button type="button" class="btn btn-primary btn-sm" id="backup-now-btn">Backup now</button>
+      </form>
+      <div class="text-danger small mb-2" id="backups-error"></div>
+      <div class="text-secondary small mb-2" id="backup-last-run"></div>
+      <div style="max-height: 40vh; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0">
+          <tbody id="backups-rows"></tbody>
+        </table>
+        <div class="text-secondary small py-3 text-center d-none" id="backups-empty-hint">No backups yet.</div>
+      </div>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="backups-close-btn">Close</button>
       </div>
     </div>
   </div>
@@ -1869,6 +1913,103 @@ adConfigForm.addEventListener('submit', async (e) => {
   } else {
     const data = await res.json().catch(() => ({}));
     adConfigError.textContent = data.error || 'Failed to save Active Directory settings';
+  }
+});
+
+// --- Backups ---
+const backupsModalBackdrop = document.getElementById('backups-modal-backdrop');
+const backupsError = document.getElementById('backups-error');
+const backupLastRun = document.getElementById('backup-last-run');
+const backupsRows = document.getElementById('backups-rows');
+const backupsEmptyHint = document.getElementById('backups-empty-hint');
+const backupEnabledInput = document.getElementById('backup-enabled');
+const backupIntervalInput = document.getElementById('backup-interval');
+const backupRetentionInput = document.getElementById('backup-retention');
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function loadBackupsPanel() {
+  backupsError.textContent = '';
+  const res = await fetch('/api/admin/backup-settings');
+  if (!res.ok) return;
+  const data = await res.json();
+
+  backupEnabledInput.checked = data.settings.enabled;
+  backupIntervalInput.value = String(data.settings.interval_hours);
+  backupRetentionInput.value = data.settings.retention_count;
+  backupLastRun.textContent = data.settings.last_backup_at
+    ? `Last backup: ${new Date(data.settings.last_backup_at).toLocaleString()}`
+    : 'No backup has run yet.';
+
+  backupsRows.innerHTML = '';
+  backupsEmptyHint.classList.toggle('d-none', data.backups.length > 0);
+  data.backups.forEach((b) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${new Date(b.created_at).toLocaleString()}</td>
+      <td class="text-secondary small">${formatBytes(b.size)}</td>
+      <td class="text-end">
+        <a class="btn btn-outline-light btn-sm" href="/api/admin/backup/${encodeURIComponent(b.filename)}/download">Download</a>
+        <button class="btn btn-outline-light btn-sm" data-delete-backup="${escapeHtml(b.filename)}">Delete</button>
+      </td>`;
+    backupsRows.appendChild(tr);
+  });
+}
+
+document.getElementById('admin-backups-btn').addEventListener('click', () => {
+  backupsModalBackdrop.classList.add('open');
+  loadBackupsPanel();
+});
+
+document.getElementById('backups-close-btn').addEventListener('click', () => {
+  backupsModalBackdrop.classList.remove('open');
+});
+
+document.getElementById('backup-settings-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  backupsError.textContent = '';
+  const res = await fetch('/api/admin/backup-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      enabled: backupEnabledInput.checked,
+      interval_hours: Number(backupIntervalInput.value),
+      retention_count: Number(backupRetentionInput.value),
+    }),
+  });
+  if (res.ok) {
+    loadBackupsPanel();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    backupsError.textContent = data.error || 'Failed to save backup settings';
+  }
+});
+
+document.getElementById('backup-now-btn').addEventListener('click', async () => {
+  backupsError.textContent = '';
+  const res = await fetch('/api/admin/backup/create', { method: 'POST' });
+  if (res.ok) {
+    loadBackupsPanel();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    backupsError.textContent = data.error || 'Failed to create backup';
+  }
+});
+
+backupsRows.addEventListener('click', async (e) => {
+  const filename = e.target.getAttribute('data-delete-backup');
+  if (!filename) return;
+  if (!confirm('Delete this backup? This cannot be undone.')) return;
+  const res = await fetch(`/api/admin/backup/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+  if (res.ok) {
+    loadBackupsPanel();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    backupsError.textContent = data.error || 'Failed to delete backup';
   }
 });
 

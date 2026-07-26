@@ -20,7 +20,7 @@ COPY . .
 # creation) so they exist with sane ownership even before any volume gets
 # attached - the entrypoint script re-asserts ownership at every container
 # start anyway, which is what actually matters once the real volumes mount.
-RUN mkdir -p /app/data /app/drive-data && chown -R node:node /app
+RUN mkdir -p /app/data /app/drive-data /app/backups && chown -R node:node /app
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

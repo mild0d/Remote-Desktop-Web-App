@@ -477,6 +477,31 @@ git update-index --chmod=+x setup.sh start.sh stop.sh
 git commit -m "Track setup/start/stop scripts as executable"
 ```
 
+## Backups
+
+**🛡️ Admin → 💾 Backups** creates a zip snapshot of everything in
+`data/` - users, connections (with their encrypted passwords, exactly as
+stored), settings, the audit log, and the TLS certificate. It does not
+include the shared drive's contents (`drive-data`), which is treated as
+working/transient storage rather than something that needs point-in-time
+snapshots.
+
+- **Automatic backups** run on a schedule (every 24 hours or weekly),
+  keeping only the most recent N (configurable) and deleting older ones
+  automatically.
+- **Backup now** creates one immediately, useful before a risky change.
+- Backups are stored on the host at `./backups/` (a plain folder, not
+  hidden inside a Docker volume), so you can easily copy them off to
+  external/offsite storage using whatever backup tooling you already use.
+
+**Restoring is a deliberate manual process, not a one-click button** -
+stop the app (`docker compose down`), replace the contents of `./data/`
+with what's inside a backup zip, then start it again
+(`docker compose up -d`). This is intentional: an automated one-click
+restore is a much higher-risk feature to get wrong than reliably creating
+backups in the first place, and restoring is rare enough that a deliberate
+manual step is the safer design.
+
 ## Keeping dependencies patched (Dependabot)
 
 `.github/dependabot.yml` is already set up to open weekly pull requests

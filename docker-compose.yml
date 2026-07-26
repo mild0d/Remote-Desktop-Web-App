@@ -21,6 +21,7 @@ services:
       - "${APP_PORT:-8080}:8080"
     volumes:
       - ./data:/app/data
+      - ./backups:/app/backups
       - drive-data:/app/drive-data
     depends_on:
       - guacd

@@ -9,6 +9,6 @@
 # on the host yourself.
 set -e
 
-chown -R node:node /app/data /app/drive-data 2>/dev/null || true
+chown -R node:node /app/data /app/drive-data /app/backups 2>/dev/null || true
 
 exec su-exec node "$@"
