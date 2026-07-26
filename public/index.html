@@ -645,6 +645,8 @@ async function loadConnections() {
 // network round-trip - and without resetting every dot back to the grey
 // "checking..." state in the meantime.
 let reachabilityResults = {};
+let lastReachabilityCheckTime = 0;
+const REACHABILITY_MIN_INTERVAL_MS = 15000; // don't re-check more often than this
 
 function applyReachabilityResults() {
   Object.entries(reachabilityResults).forEach(([id, result]) => {
@@ -660,11 +662,23 @@ function applyReachabilityResults() {
   });
 }
 
+// Without this rate limit, returning to the list (clicking the Connections
+// tab, hitting Back, closing a session) re-checks reachability every single
+// time - which means the "checked X ago" tooltip almost never gets a
+// chance to show anything but a few seconds, even though the underlying
+// calculation itself is correct. Skipping the network round-trip when the
+// last real check is still fresh lets that number actually reflect
+// meaningful elapsed time between checks that truly happened.
 async function loadReachability() {
+  if (Date.now() - lastReachabilityCheckTime < REACHABILITY_MIN_INTERVAL_MS) {
+    applyReachabilityResults(); // reapply the still-cached (and correctly aging) result
+    return;
+  }
   try {
     const res = await fetch('/api/connections/reachability');
     if (!res.ok) return;
     reachabilityResults = await res.json();
+    lastReachabilityCheckTime = Date.now();
     applyReachabilityResults();
   } catch (err) {
     console.warn('Failed to check reachability', err);
