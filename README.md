@@ -291,6 +291,22 @@ certificate when those files don't already exist.
 
 ## Security notes — please read
 
+**HTTP security headers** (via [Helmet](https://helmetjs.github.io/)) are
+applied to every response: a Content-Security-Policy, clickjacking
+protection (X-Frame-Options), MIME-sniffing protection, HSTS, and a few
+others. One deliberate exception: `script-src` allows `'unsafe-inline'`,
+since this app's entire frontend is built as inline `<script type="module">`
+blocks rather than external `.js` files — CSP's default only permits
+same-origin *files*, not inline script content, so a stricter setting
+would break the app outright. Everything else keeps Helmet's secure
+defaults; the one inline event-handler attribute this app used to have
+(an `onerror` on thumbnail images) was replaced with a real
+`addEventListener` specifically so that directive could stay locked down.
+
+The session cookie is also `SameSite=Lax`, `HttpOnly`, and `Secure` -
+blocking cross-site requests from ever carrying it, inaccessible to
+JavaScript, and never sent over plain HTTP.
+
 Registration is wide open by design (no email verification, no admin
 approval) — anyone who can reach the app can create their own account.
 That's a deliberate simplicity tradeoff, not an oversight. Given that:

@@ -4,6 +4,7 @@ const path = require('path');
 const https = require('https');
 const express = require('express');
 const session = require('express-session');
+const helmet = require('helmet');
 const GuacamoleLite = require('guacamole-lite');
 
 const { requireLogin, requireAdmin } = require('./lib/auth');
@@ -19,6 +20,30 @@ const { register: registerSession, unregister: unregisterSession } = require('./
 ensureAtLeastOneAdmin();
 
 const app = express();
+
+// Helmet's default Content-Security-Policy would block this app's own
+// frontend outright - the whole thing is built as inline <script
+// type="module"> blocks rather than external .js files, and CSP's default
+// script-src only permits same-origin *files*, not inline script content.
+// scriptSrc is relaxed here specifically for that reason - a real
+// limitation of this app's current structure, not a default we're
+// casually loosening. Everything else keeps Helmet's normal secure
+// defaults: style-src and img-src already permit the inline styles and
+// data: URIs (thumbnails, QR codes) this app uses without needing any
+// override, and script-src-attr stays at its secure 'none' default now
+// that the one inline event-handler attribute in this app (an onerror on
+// thumbnail images) has been replaced with a real addEventListener.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'script-src': ["'self'", "'unsafe-inline'"],
+      },
+    },
+  })
+);
+
 app.use(express.json({ limit: '10mb' })); // base64 PNG screenshots exceed the 100kb default
 app.use(
   session({
@@ -28,6 +53,10 @@ app.use(
     cookie: {
       maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
       secure: true, // only sent over HTTPS, which is now the only mode this app serves
+      sameSite: 'lax', // blocks cross-site POST/PUT/DELETE requests from ever carrying this cookie,
+      // while still allowing normal same-site navigation - the standard recommended
+      // default for session cookies (stricter than leaving this unset entirely, without
+      // 'strict''s occasional UX friction on direct/bookmarked links)
     },
   })
 );

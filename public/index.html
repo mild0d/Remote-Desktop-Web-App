@@ -676,8 +676,7 @@ function renderConnections() {
           <div class="select-checkbox-wrap">
             <input type="checkbox" class="form-check-input" data-select-checkbox="${c.id}" ${selectedConnectionIds.has(c.id) ? 'checked' : ''} style="width: 1.2rem; height: 1.2rem;" />
           </div>
-          <img src="/api/connections/${c.id}/thumbnail?t=${Date.now()}"
-               onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+          <img src="/api/connections/${c.id}/thumbnail?t=${Date.now()}" data-thumbnail-img />
           <div class="thumbnail-placeholder">${c.icon || '🖥️'}</div>
         </div>
         <div class="card-body">
@@ -980,6 +979,19 @@ function openCardDropdown(triggerButton, connectionId) {
   cardDropdownMenu.style.right = `${window.innerWidth - rect.right}px`;
   cardDropdownMenu.classList.add('show');
 }
+
+// 'error' events on <img> elements don't bubble, unlike click/change - so
+// this has to listen during the capture phase to catch it via delegation,
+// rather than the normal bubble-phase pattern used for the other
+// delegated listeners on this element. This replaces what used to be an
+// inline onerror="..." attribute, so the CSP's script-src-attr directive
+// can stay at its secure default instead of needing 'unsafe-inline'.
+rowsEl.addEventListener('error', (e) => {
+  if (e.target.matches('[data-thumbnail-img]')) {
+    e.target.style.display = 'none';
+    e.target.nextElementSibling.style.display = 'flex';
+  }
+}, true);
 
 rowsEl.addEventListener('click', async (e) => {
   const connectId = e.target.getAttribute('data-connect');
