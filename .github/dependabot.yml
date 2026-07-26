@@ -1,0 +1,32 @@
+# Configures Dependabot's routine version-update pull requests for this
+# repo. This file does NOT turn on vulnerability alerts or "Dependabot
+# security updates" - those are separate GitHub repo settings, enabled
+# under Settings -> Code security, since they aren't something a committed
+# file can control. What this file DOES do: opens PRs on a schedule to
+# keep dependencies reasonably current, for both ecosystems actually used
+# in this project.
+
+version: 2
+updates:
+  # The Node.js dependencies in package.json
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Groups routine minor/patch bumps into a single PR instead of one PR
+    # per package - keeps the PR list manageable for a small project like
+    # this one. A major version bump (which can include breaking changes)
+    # still gets its own separate PR either way, so it isn't silently
+    # bundled in with everything else.
+    groups:
+      minor-and-patch-updates:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # The node:20-alpine base image in the Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

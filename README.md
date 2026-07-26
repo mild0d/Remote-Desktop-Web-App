@@ -477,6 +477,26 @@ git update-index --chmod=+x setup.sh start.sh stop.sh
 git commit -m "Track setup/start/stop scripts as executable"
 ```
 
+## Keeping dependencies patched (Dependabot)
+
+`.github/dependabot.yml` is already set up to open weekly pull requests
+keeping this project's npm dependencies and the Dockerfile's base image
+current (routine minor/patch bumps get grouped into one PR to keep the
+list manageable; major version bumps still get their own PR, since those
+can include breaking changes worth reviewing individually).
+
+That file only handles routine updates, though - two related features are
+separate GitHub repo *settings* that a committed file can't turn on for
+you:
+
+- **Settings -> Code security -> Dependabot alerts** - notifies you when a
+  dependency has a known security vulnerability
+- **Settings -> Code security -> Dependabot security updates** - has
+  Dependabot automatically open a PR to patch a vulnerable dependency as
+  soon as one's disclosed, independent of the weekly schedule above
+
+Both are free, and worth enabling on this repo if you haven't already.
+
 ## Troubleshooting
 
 - **"Failed to start session" / immediate disconnect**: check
