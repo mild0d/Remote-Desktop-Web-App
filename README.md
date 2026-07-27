@@ -122,6 +122,14 @@ refreshes, all in parallel server-side in a single request. Hover over the
 dot for a bit more detail: response time in milliseconds (for a reachable
 host) and how long ago the check was actually performed.
 
+**Click the dot** for its uptime history - a background check runs every
+5 minutes for every connection, independent of whether anyone has the app
+open, so the trend reflects genuine continuous monitoring rather than only
+whenever someone happened to be looking. The popover shows the most recent
+30 checks as a bar strip (green/red, hover a bar for its exact time) and an
+overall uptime percentage across the full recorded history (up to about
+41 hours' worth, at the 5-minute check interval).
+
 ### Two-factor authentication (required)
 
 Every account must have two-factor authentication set up — there's no way
@@ -248,11 +256,14 @@ opening a panel to:
 - Toggle whether new self-registration is allowed at all, letting you close
   signups once your team is fully set up (registration is wide open by
   default, as noted in Security below)
-- View the **📋 Audit log** — every RDP connection attempt *and* every web
+- View the **📋 Audit log** — every RDP connection attempt, every web
   app login attempt (success or failure, including failed attempts against
   usernames that don't even exist - useful for spotting brute-force
-  attempts) across every user. Kept to the most recent 5000 entries to
-  avoid unbounded growth on flat-file storage.
+  attempts), *and* every sensitive admin action (password resets, 2FA
+  disables, account unlocks/deletions, admin-status changes, registration
+  toggling, AD/backup configuration changes) - who did it and to whom.
+  Kept to the most recent 5000 entries to avoid unbounded growth on
+  flat-file storage.
 - View **🖥️ Active sessions** — RDP sessions genuinely open *right now*
   across every user (not just attempted - actually connected), with a
   **Force disconnect** button per session. This is a different thing from

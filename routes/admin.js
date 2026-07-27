@@ -10,7 +10,7 @@ const {
   MIN_PASSWORD_LENGTH,
 } = require('../lib/users');
 const { getSettings, updateSettings } = require('../lib/settings');
-const { getRecentEvents } = require('../lib/auditLog');
+const { getRecentEvents, logAdminEvent } = require('../lib/auditLog');
 const { listActive, forceDisconnect } = require('../lib/activeSessions');
 const { getConfig: getADConfig, getConfigStatus: getADConfigStatus, setConfig: setADConfig } = require('../lib/adConfig');
 const { testConnection: testADConnection } = require('../lib/adBrowser');
@@ -34,7 +34,13 @@ router.post('/users/:id/toggle-admin', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   try {
-    setAdminStatus(userId, !user.is_admin);
+    const makeAdmin = !user.is_admin;
+    setAdminStatus(userId, makeAdmin);
+    logAdminEvent({
+      adminUsername: req.session.username,
+      action: makeAdmin ? 'Granted admin access' : 'Removed admin access',
+      targetUsername: user.username,
+    });
     res.json({ ok: true });
   } catch (err) {
     if (err.code === 'LAST_ADMIN') {
@@ -55,6 +61,7 @@ router.post('/users/:id/reset-password', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   adminResetPassword(userId, newPassword);
+  logAdminEvent({ adminUsername: req.session.username, action: 'Reset password', targetUsername: user.username });
   res.json({ ok: true });
 });
 
@@ -67,6 +74,7 @@ router.post('/users/:id/disable-2fa', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   disableTotp(userId);
+  logAdminEvent({ adminUsername: req.session.username, action: 'Disabled 2FA', targetUsername: user.username });
   res.json({ ok: true });
 });
 
@@ -78,6 +86,7 @@ router.post('/users/:id/unlock', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   adminUnlockAccount(userId);
+  logAdminEvent({ adminUsername: req.session.username, action: 'Unlocked account', targetUsername: user.username });
   res.json({ ok: true });
 });
 
@@ -103,6 +112,8 @@ router.delete('/users/:id', (req, res) => {
     return res.status(500).json({ error: 'Failed to delete user' });
   }
 
+  logAdminEvent({ adminUsername: req.session.username, action: 'Deleted user', targetUsername: user.username });
+
   // Best-effort cleanup of the deleted user's data. Failures here don't
   // block the account deletion itself from having already succeeded.
   try { deleteConnectionsForUser(userId); } catch (err) { console.warn('Cleanup failed (connections):', err.message); }
@@ -119,6 +130,10 @@ router.get('/settings', (req, res) => {
 router.post('/settings', (req, res) => {
   const { registration_enabled } = req.body || {};
   const updated = updateSettings({ registration_enabled: Boolean(registration_enabled) });
+  logAdminEvent({
+    adminUsername: req.session.username,
+    action: updated.registration_enabled ? 'Enabled new user registration' : 'Disabled new user registration',
+  });
   res.json(updated);
 });
 
@@ -147,6 +162,7 @@ router.post('/ad-config', (req, res) => {
     return res.status(400).json({ error: 'Server URL, bind DN, and base DN are all required' });
   }
   setADConfig({ url, bindDN, bindPassword, baseDN, caCert, skipCertValidation });
+  logAdminEvent({ adminUsername: req.session.username, action: 'Updated Active Directory configuration' });
   res.json({ ok: true });
 });
 
@@ -184,6 +200,7 @@ router.post('/backup-settings', (req, res) => {
     ...(interval_hours !== undefined ? { interval_hours } : {}),
     ...(retention_count !== undefined ? { retention_count } : {}),
   });
+  logAdminEvent({ adminUsername: req.session.username, action: 'Updated backup settings' });
   res.json({ ok: true, settings: updated });
 });
 
@@ -209,6 +226,7 @@ router.get('/backup/:filename/download', (req, res) => {
 router.delete('/backup/:filename', (req, res) => {
   try {
     backup.deleteBackup(req.params.filename);
+    logAdminEvent({ adminUsername: req.session.username, action: 'Deleted a backup', details: req.params.filename });
     res.json({ ok: true });
   } catch (err) {
     res.status(404).json({ error: 'Backup not found' });

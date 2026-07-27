@@ -19,9 +19,11 @@ const { getOrCreateCertificate } = require('./lib/tls');
 const { ensureAtLeastOneAdmin } = require('./lib/users');
 const { register: registerSession, unregister: unregisterSession } = require('./lib/activeSessions');
 const { startScheduler: startBackupScheduler } = require('./lib/backup');
+const { startScheduler: startReachabilityScheduler } = require('./lib/reachabilityHistory');
 
 ensureAtLeastOneAdmin();
 startBackupScheduler();
+startReachabilityScheduler();
 
 const app = express();
 

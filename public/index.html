@@ -89,9 +89,27 @@
     display: inline-block; width: 10px; height: 10px; border-radius: 50%;
     background: var(--bs-secondary-color); /* neutral color while checking */
     margin-right: 2px; vertical-align: middle;
+    cursor: pointer;
   }
   .reachability-dot.reachable { background: var(--bs-success); }
   .reachability-dot.unreachable { background: var(--bs-danger); }
+
+  #reachability-history-popover {
+    display: none;
+    position: fixed; z-index: 1060; width: 280px;
+    background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
+    border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    padding: 12px;
+  }
+  #reachability-history-popover.show { display: block; }
+  #reachability-history-popover .history-bars {
+    display: flex; align-items: flex-end; gap: 2px; height: 24px; margin: 8px 0;
+  }
+  #reachability-history-popover .history-bar {
+    flex: 1; height: 100%; border-radius: 2px; background: var(--bs-secondary-color);
+  }
+  #reachability-history-popover .history-bar.reachable { background: var(--bs-success); }
+  #reachability-history-popover .history-bar.unreachable { background: var(--bs-danger); }
 
   .select-checkbox-wrap {
     display: none;
@@ -193,6 +211,13 @@
   <button id="export-btn">⬇️ Export</button>
   <button id="import-btn">⬆️ Import</button>
   <button id="import-ad-btn">🗂️ Import from Active Directory</button>
+</div>
+
+<div id="reachability-history-popover">
+  <div class="fw-medium mb-1" id="reachability-history-name"></div>
+  <div class="text-secondary small" id="reachability-history-status"></div>
+  <div class="history-bars" id="reachability-history-bars"></div>
+  <div class="text-secondary small" id="reachability-history-uptime"></div>
 </div>
 
 <div class="app-overlay" id="modal-backdrop">
@@ -1085,6 +1110,7 @@ rowsEl.addEventListener('error', (e) => {
 rowsEl.addEventListener('click', async (e) => {
   const connectId = e.target.getAttribute('data-connect');
   const dropdownToggleId = e.target.getAttribute('data-dropdown-toggle');
+  const reachabilityId = e.target.getAttribute('data-reachability-id');
 
   if (dropdownToggleId) {
     const wasOpenForThisCard = cardDropdownMenu.classList.contains('show') && cardDropdownConnectionId === dropdownToggleId;
@@ -1093,11 +1119,74 @@ rowsEl.addEventListener('click', async (e) => {
     return;
   }
 
+  if (reachabilityId) {
+    openReachabilityHistoryPopover(e.target, reachabilityId);
+    return;
+  }
+
   if (connectId) {
     const name = e.target.getAttribute('data-name');
     openOrFocusSession(connectId, name);
   }
 });
+
+// --- Reachability history popover ---
+const reachabilityHistoryPopover = document.getElementById('reachability-history-popover');
+const reachabilityHistoryName = document.getElementById('reachability-history-name');
+const reachabilityHistoryStatus = document.getElementById('reachability-history-status');
+const reachabilityHistoryBars = document.getElementById('reachability-history-bars');
+const reachabilityHistoryUptime = document.getElementById('reachability-history-uptime');
+
+function closeReachabilityHistoryPopover() {
+  reachabilityHistoryPopover.classList.remove('show');
+}
+
+async function openReachabilityHistoryPopover(dotEl, connectionId) {
+  const rect = dotEl.getBoundingClientRect();
+  reachabilityHistoryPopover.style.top = `${rect.bottom + 6}px`;
+  reachabilityHistoryPopover.style.left = `${Math.max(8, rect.left - 130)}px`;
+  reachabilityHistoryPopover.classList.add('show');
+
+  const card = dotEl.closest('.card');
+  const nameEl = card ? card.querySelector('.card-title') : null;
+  reachabilityHistoryName.textContent = nameEl ? nameEl.textContent.trim() : 'Connection';
+  reachabilityHistoryStatus.textContent = 'Loading history...';
+  reachabilityHistoryBars.innerHTML = '';
+  reachabilityHistoryUptime.textContent = '';
+
+  const res = await fetch(`/api/connections/${connectionId}/reachability-history`);
+  if (!res.ok) {
+    reachabilityHistoryStatus.textContent = 'Failed to load history.';
+    return;
+  }
+  const data = await res.json();
+
+  if (data.entries.length === 0) {
+    reachabilityHistoryStatus.textContent = 'No history yet - checks run automatically every 5 minutes in the background.';
+    return;
+  }
+
+  reachabilityHistoryStatus.textContent = `${data.entries.length} checks recorded`;
+  // Shows the most recent 30 checks as bars - recent, granular detail -
+  // while the uptime percentage below reflects the full stored history
+  // (up to the last ~500 checks, roughly 41 hours at the 5-minute
+  // background check interval).
+  data.entries.slice(-30).forEach((entry) => {
+    const bar = document.createElement('div');
+    bar.className = `history-bar ${entry.reachable ? 'reachable' : 'unreachable'}`;
+    bar.title = `${new Date(entry.timestamp).toLocaleString()} - ${entry.reachable ? `Reachable (${entry.latencyMs}ms)` : 'Not reachable'}`;
+    reachabilityHistoryBars.appendChild(bar);
+  });
+  reachabilityHistoryUptime.textContent = `${data.uptimePercent}% uptime over the recorded history`;
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#reachability-history-popover') && !e.target.matches('[data-reachability-id]')) {
+    closeReachabilityHistoryPopover();
+  }
+});
+document.getElementById('grid-scroll-container').addEventListener('scroll', closeReachabilityHistoryPopover);
+window.addEventListener('resize', closeReachabilityHistoryPopover);
 
 // --- Bulk selection ---
 const bulkActionBar = document.getElementById('bulk-action-bar');
@@ -2025,23 +2114,29 @@ async function loadAuditLog() {
   auditLogRows.innerHTML = '';
   events.forEach((ev) => {
     const tr = document.createElement('tr');
-    let typeLabel, details;
+    let typeLabel, username, details;
 
     if (ev.type === 'login') {
       typeLabel = 'Login';
+      username = ev.username;
       const badge = ev.success
         ? '<span class="badge text-bg-success">success</span>'
         : '<span class="badge text-bg-danger">failed</span>';
       details = `${badge} ${escapeHtml(ev.reason || '')}${ev.ip ? ` <span class="text-secondary small">(${escapeHtml(ev.ip)})</span>` : ''}`;
+    } else if (ev.type === 'admin') {
+      typeLabel = 'Admin';
+      username = ev.adminUsername;
+      details = `${escapeHtml(ev.action || '')}${ev.targetUsername ? ` <span class="text-secondary small">→ ${escapeHtml(ev.targetUsername)}</span>` : ''}${ev.details ? ` <span class="text-secondary small">(${escapeHtml(ev.details)})</span>` : ''}`;
     } else {
       typeLabel = 'Connection';
+      username = ev.username;
       details = `${escapeHtml(ev.connection_name || '')} <span class="text-secondary small">${escapeHtml(ev.hostname || '')}</span>`;
     }
 
     tr.innerHTML = `
       <td class="text-secondary small">${new Date(ev.timestamp).toLocaleString()}</td>
       <td>${typeLabel}</td>
-      <td>${escapeHtml(ev.username || '')}</td>
+      <td>${escapeHtml(username || '')}</td>
       <td>${details}</td>`;
     auditLogRows.appendChild(tr);
   });

@@ -1,6 +1,5 @@
 const express = require('express');
 const fs = require('fs');
-const net = require('net');
 const { loadAll, saveAll, nextId } = require('../lib/store');
 const { encrypt, decrypt } = require('../lib/crypto');
 const { encryptGuacToken } = require('../lib/guacToken');
@@ -8,35 +7,10 @@ const { ensureUserDriveDir, userDrivePathForGuacd } = require('../lib/driveStore
 const { thumbnailPath } = require('../lib/thumbnailStore');
 const { getDefaultCredentials, listAllUsers, findById: findUserById } = require('../lib/users');
 const { logConnectionEvent } = require('../lib/auditLog');
+const { checkReachable } = require('../lib/reachabilityCheck');
+const { getHistoryForConnection } = require('../lib/reachabilityHistory');
 
 const router = express.Router();
-
-// Quick TCP-level reachability check - just "does something answer on this
-// port", not a real RDP handshake. Good enough to distinguish "server is up"
-// from "server is off/unreachable" without the overhead of actually
-// negotiating RDP.
-function checkReachable(hostname, port, timeoutMs = 2000) {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    let settled = false;
-    const startedAt = Date.now();
-
-    const finish = (reachable) => {
-      if (settled) return;
-      settled = true;
-      const latencyMs = Date.now() - startedAt;
-      socket.destroy();
-      resolve({ reachable, latencyMs: reachable ? latencyMs : null });
-    };
-
-    socket.setTimeout(timeoutMs);
-    socket.once('connect', () => finish(true));
-    socket.once('timeout', () => finish(false));
-    socket.once('error', () => finish(false));
-
-    socket.connect(port, hostname);
-  });
-}
 
 function stripPassword({ password, ...rest }) {
   return rest;
@@ -252,6 +226,16 @@ router.get('/:id', (req, res) => {
   );
   if (!conn) return res.status(404).json({ error: 'Not found' });
   res.json(stripPassword(conn));
+});
+
+router.get('/:id/reachability-history', (req, res) => {
+  const conn = loadAll().find(
+    (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
+  );
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+
+  const { entries, uptimePercent } = getHistoryForConnection(conn.id);
+  res.json({ entries, uptimePercent });
 });
 
 router.post('/', (req, res) => {
