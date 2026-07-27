@@ -203,9 +203,13 @@ router.post('/bulk-share', (req, res) => {
       name: conn.name,
       hostname: conn.hostname,
       port: conn.port,
-      username: conn.username || '',
-      password: '', // intentionally never shared, same as the single-share endpoint
-      domain: conn.domain || '',
+      // Intentionally always blank, regardless of what the original
+      // connection had set - the recipient should fall back entirely to
+      // their own default credentials (Settings), not partially inherit
+      // the sharer's username/domain while only password gets excluded.
+      username: '',
+      password: '',
+      domain: '',
       security: conn.security || 'any',
       ignore_cert: conn.ignore_cert,
       color_depth: conn.color_depth || '16',
@@ -334,8 +338,13 @@ router.post('/:id/share', (req, res) => {
     name: conn.name,
     hostname: conn.hostname,
     port: conn.port,
-    username: conn.username || '',
-    password: '', // intentionally never shared - see comment above
+    // Intentionally always blank, regardless of what the original
+    // connection had set - the recipient should fall back entirely to
+    // their own default credentials (Settings), not partially inherit
+    // the sharer's username/domain while only password gets excluded.
+    username: '',
+    password: '',
+    domain: '',
     security: conn.security || 'any',
     ignore_cert: conn.ignore_cert,
     color_depth: conn.color_depth || '16',
