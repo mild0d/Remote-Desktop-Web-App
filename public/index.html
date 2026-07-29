@@ -1627,31 +1627,46 @@ function sendTextToActiveSession(text) {
   writer.sendEnd();
 }
 
-// Primary mechanism: detect Ctrl+V directly at the document level and
-// proactively read the clipboard via the Clipboard API. This does NOT
-// depend on any element having focus at the right moment, unlike the
-// native 'paste' event below - which matters here, since clicking around
-// inside a session (to interact with it via mouse) can repeatedly steal
-// focus away from the clipboard-sink textarea faster than a user can
-// Ctrl+V, making the paste-event approach unreliable on its own.
+// Primary mechanism: detect Ctrl+V directly at the document level, in the
+// CAPTURE phase specifically - Guacamole.Keyboard's own internal listener
+// (which forwards literal keystrokes to the remote session) uses the
+// default bubble phase, and capture-phase listeners always run first
+// regardless of registration order. That matters a lot here: without
+// this, the literal Ctrl+V keystroke would reach the remote machine and
+// trigger ITS OWN native paste using whatever was already in its
+// clipboard buffer, before this handler's async clipboard read even
+// finishes - a race that the remote machine's synchronous keystroke
+// forwarding would almost always win, resulting in a stale paste. This
+// was the actual root cause of paste being "spotty" - not a browser
+// permission issue.
 document.addEventListener('keydown', (e) => {
   if (activeKey === 'list') return;
   const isPasteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'v';
   if (!isPasteShortcut) return;
+
+  const session = sessions.get(activeKey);
+  if (!session || !session.client) return;
+
+  // Stops this specific keydown from ever reaching Guacamole's own
+  // (bubble-phase) forwarding listener - the literal keystroke is
+  // re-sent manually below, only after the clipboard update completes.
+  e.preventDefault();
+  e.stopPropagation();
+
   navigator.clipboard.readText().then((text) => {
-    sendTextToActiveSession(text);
+    sendTextToActiveSession(text); // updates the remote session's clipboard buffer first
+    // Only now, with the remote clipboard genuinely up to date, simulate
+    // the actual Ctrl+V keypress - using the same sendKeyEvent calls
+    // Guacamole's own keyboard forwarding would have made, just in the
+    // correct order relative to the clipboard update instead of racing it.
+    session.client.sendKeyEvent(1, 0xffe3); // Control_L down
+    session.client.sendKeyEvent(1, 0x0076); // v down
+    session.client.sendKeyEvent(0, 0x0076); // v up
+    session.client.sendKeyEvent(0, 0xffe3); // Control_L up
   }).catch((err) => {
     console.warn('[clipboard] Could not read local clipboard (permission denied/dismissed?):', err);
   });
-});
-
-// Secondary/fallback mechanism: a genuine native paste event, in case the
-// clipboard-sink textarea does happen to have focus at the right moment.
-clipboardSink.addEventListener('paste', (e) => {
-  const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-  e.preventDefault();
-  sendTextToActiveSession(text);
-});
+}, true); // true = capture phase, see comment above
 
 async function openOrFocusSession(id, name) {
   const key = String(id);

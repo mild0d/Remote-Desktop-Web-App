@@ -7,6 +7,21 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.0.1] - 2026-07-29
+
+### Fixed
+- Clipboard paste into a session was unreliable ("sometimes works,
+  sometimes pastes the last thing copied") - caused by a genuine race
+  condition, not a browser permission issue: the app's keyboard-forwarding
+  mechanism and its clipboard-sync mechanism both independently reacted to
+  Ctrl+V, and the literal keystroke forwarding (fast, synchronous) almost
+  always reached the remote machine before the clipboard content
+  (asynchronous) had actually finished updating there - so the remote
+  machine pasted whatever was already in its clipboard buffer from the
+  last successful sync. Fixed by intercepting the keystroke before it's
+  forwarded, updating the remote clipboard first, and only then manually
+  simulating the actual keypress once that update is confirmed complete.
+
 ## [1.0.0] - 2026-07-29
 
 First release. A self-hosted, browser-based RDP gateway with full Active
