@@ -7,6 +7,38 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.0.3] - 2026-07-29
+
+### Fixed
+- A third clipboard issue: even after 1.0.1/1.0.2, pasting could still
+  paste a stale value on the first attempt, with a correct paste on a
+  second attempt shortly after. The 1.0.1 fix guaranteed the clipboard
+  update and the simulated keypress happen in the right *JavaScript*
+  execution order, but never accounted for the real time that update
+  still needs to travel browser -> guacd -> RDP protocol -> the remote
+  machine's own OS clipboard - the simulated keypress could still reach
+  the remote session and trigger its native paste before the update had
+  actually landed there. Added a short, deliberate delay between pushing
+  the clipboard update and simulating the keypress, giving that round-trip
+  time to genuinely complete first.
+
+## [1.0.2] - 2026-07-29
+
+### Fixed
+- A second clipboard issue, distinct from the 1.0.1 fix: pasting into a
+  session would sometimes paste an *older* value that had previously been
+  copied *from* the remote session, rather than what was just copied on
+  the host - and pasting a second time (without copying anything new)
+  would then paste the correct value. The likely cause: RDP clipboard
+  redirection can echo back a change notification for content this app
+  itself just pushed into the remote session, and if that echo arrived
+  after the user had already copied something new on their own host in
+  the meantime, it would silently overwrite that fresh copy with the
+  stale, already-pasted value. Fixed by tracking what was most recently
+  pushed to the remote session and ignoring the next incoming
+  notification if it's an exact echo of that, while still syncing
+  anything genuinely new copied inside the session.
+
 ## [1.0.1] - 2026-07-29
 
 ### Fixed

@@ -1621,6 +1621,11 @@ function sendTextToActiveSession(text) {
   if (!text) return;
   const session = sessions.get(activeKey);
   if (!session || !session.client) return;
+  // Recorded so the remote-to-host sync direction (client.onclipboard,
+  // below) can recognize and ignore an echo of this exact update coming
+  // back, rather than mistaking it for a genuine new copy made inside
+  // the remote session.
+  session.lastSentToRemote = text;
   const stream = session.client.createClipboardStream('text/plain');
   const writer = new Guacamole.StringWriter(stream);
   writer.sendText(text);
@@ -1655,14 +1660,22 @@ document.addEventListener('keydown', (e) => {
 
   navigator.clipboard.readText().then((text) => {
     sendTextToActiveSession(text); // updates the remote session's clipboard buffer first
-    // Only now, with the remote clipboard genuinely up to date, simulate
-    // the actual Ctrl+V keypress - using the same sendKeyEvent calls
-    // Guacamole's own keyboard forwarding would have made, just in the
-    // correct order relative to the clipboard update instead of racing it.
-    session.client.sendKeyEvent(1, 0xffe3); // Control_L down
-    session.client.sendKeyEvent(1, 0x0076); // v down
-    session.client.sendKeyEvent(0, 0x0076); // v up
-    session.client.sendKeyEvent(0, 0xffe3); // Control_L up
+    // Pushing the clipboard update and simulating the keypress in the
+    // right JS execution order (previous fix) isn't actually enough on
+    // its own - the update still has to travel browser -> guacd -> RDP
+    // protocol -> the remote machine's own OS clipboard, which takes
+    // real time. Without waiting for that round-trip, the simulated
+    // keypress below could still reach the remote session and trigger
+    // its native paste before the update has actually landed there,
+    // using whatever was already in its clipboard. This delay is a
+    // pragmatic buffer for that round-trip - there's no explicit
+    // "clipboard update confirmed" signal available to wait on instead.
+    setTimeout(() => {
+      session.client.sendKeyEvent(1, 0xffe3); // Control_L down
+      session.client.sendKeyEvent(1, 0x0076); // v down
+      session.client.sendKeyEvent(0, 0x0076); // v up
+      session.client.sendKeyEvent(0, 0xffe3); // Control_L up
+    }, 150);
   }).catch((err) => {
     console.warn('[clipboard] Could not read local clipboard (permission denied/dismissed?):', err);
   });
@@ -1796,6 +1809,18 @@ async function openOrFocusSession(id, name) {
       let data = '';
       reader.ontext = (text) => { data += text; };
       reader.onend = () => {
+        // RDP clipboard redirection can echo back a change notification
+        // for content this app itself just pushed to the remote session
+        // (direction 2, below) - if that echo arrives after the user has
+        // already copied something new on their own host in the
+        // meantime, blindly writing it here would silently clobber that
+        // fresh copy with the stale, already-pasted value. Skipping an
+        // exact match of what was just sent avoids that, while still
+        // syncing anything genuinely new copied inside the session.
+        if (data === session.lastSentToRemote) {
+          session.lastSentToRemote = null; // only guard against the very next matching echo, not indefinitely
+          return;
+        }
         navigator.clipboard.writeText(data).catch((err) => {
           console.warn('[clipboard] Failed to write remote clipboard content to the system clipboard:', err);
         });
