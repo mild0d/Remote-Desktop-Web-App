@@ -152,6 +152,7 @@
   </div>
   <div id="session-controls">
     <span id="active-status">Connecting…</span>
+    <button class="btn btn-outline-light btn-sm" id="screenshot-btn">📷 Screenshot</button>
     <button class="btn btn-outline-light btn-sm" id="files-btn">📁 Files</button>
     <button class="btn btn-outline-light btn-sm" id="shared-back-btn">← Back to list</button>
     <button class="btn btn-danger btn-sm" id="shared-disconnect-btn">Disconnect</button>
@@ -2452,6 +2453,63 @@ async function loadFiles() {
     filesRowsEl.appendChild(tr);
   });
 }
+
+// --- Screenshot ---
+// Reuses the exact same canvas-flatten approach already proven for
+// thumbnail capture above - the only difference is this is user-
+// triggered, saves at full resolution, and goes to the user's own
+// computer instead of being uploaded to the server.
+async function saveBlobToFile(blob, suggestedName) {
+  // showSaveFilePicker gives a genuine native "Save As" dialog, letting
+  // the user pick the exact folder and filename - but it's currently
+  // Chromium-only (Chrome, Edge), not supported in Firefox or Safari.
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // user cancelled the dialog - not an error
+      console.warn('[screenshot] Save dialog failed, falling back to a normal download:', err);
+      // fall through to the fallback below
+    }
+  }
+
+  // Fallback for browsers without showSaveFilePicker - a normal browser
+  // download to the default Downloads folder, no picker dialog. Still
+  // works, just without letting the user choose the destination.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('screenshot-btn').addEventListener('click', async () => {
+  const session = sessions.get(activeKey);
+  if (!session || !session.client) return;
+
+  try {
+    const canvas = session.client.getDisplay().flatten();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('Canvas produced no image data');
+
+    const safeName = (session.name || 'screenshot').replace(/[^a-z0-9_-]+/gi, '_');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    await saveBlobToFile(blob, `${safeName}-${timestamp}.png`);
+  } catch (err) {
+    console.warn('[screenshot] Failed to capture screenshot:', err);
+    alert('Failed to capture screenshot. See the browser console for details.');
+  }
+});
 
 document.getElementById('files-btn').addEventListener('click', () => {
   filesModalBackdrop.classList.add('open');

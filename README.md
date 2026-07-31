@@ -111,6 +111,14 @@ These are per-user settings, not shared across accounts — everyone on the
 same AD domain would set the same values, but nothing stops different users
 setting different ones if they connect to different environments.
 
+### Screenshot
+
+**📷 Screenshot** in the session toolbar captures the current session at
+full resolution and saves it as a PNG. In Chrome or Edge, this opens a
+real "Save As" dialog letting you pick the exact folder and filename; in
+browsers without that capability (Firefox, Safari), it falls back to a
+normal download into your default Downloads folder instead.
+
 ### Reachability indicator
 
 Each card shows a small dot next to its name — green if the host currently

@@ -7,6 +7,14 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.1.0] - 2026-07-29
+
+### Added
+- **📷 Screenshot** button in the session toolbar, next to Files - captures
+  the current session at full resolution and saves it as a PNG. Opens a
+  real native "Save As" dialog in Chrome/Edge (via the File System Access
+  API); falls back to a normal download in browsers without that support.
+
 ## [1.0.3] - 2026-07-29
 
 ### Fixed
