@@ -270,6 +270,11 @@
         <div class="mb-3">
           <label class="form-label">Password</label>
           <input id="f-password" type="password" class="form-control" placeholder="Leave blank to keep existing (or use default if unset)" />
+          <div class="form-text" id="f-password-status"></div>
+          <div class="form-check mt-1 d-none" id="f-clear-password-wrap">
+            <input class="form-check-input" type="checkbox" id="f-clear-password" />
+            <label class="form-check-label small" for="f-clear-password">Clear the saved password (use my default credentials instead)</label>
+          </div>
           <div class="form-text">Set your default username/password once via the ⚙️ Settings button - connections without their own credentials will use those automatically.</div>
         </div>
         <div class="mb-3">
@@ -1060,6 +1065,23 @@ function openModal(existing) {
   document.getElementById('f-domain').value = existing ? existing.domain || '' : '';
   document.getElementById('f-username').value = existing ? existing.username || '' : '';
   document.getElementById('f-password').value = '';
+  const passwordStatusEl = document.getElementById('f-password-status');
+  const passwordInputEl = document.getElementById('f-password');
+  const clearPasswordWrap = document.getElementById('f-clear-password-wrap');
+  document.getElementById('f-clear-password').checked = false;
+  if (existing && existing.hasPassword) {
+    passwordInputEl.placeholder = '•••••••• (saved - leave blank to keep it)';
+    passwordStatusEl.textContent = '🔒 A password is saved for this connection.';
+    clearPasswordWrap.classList.remove('d-none');
+  } else if (existing) {
+    passwordInputEl.placeholder = 'No password saved - using your default credentials';
+    passwordStatusEl.textContent = 'No password is saved for this connection - it currently uses your default credentials.';
+    clearPasswordWrap.classList.add('d-none');
+  } else {
+    passwordInputEl.placeholder = 'Leave blank to keep existing (or use default if unset)';
+    passwordStatusEl.textContent = '';
+    clearPasswordWrap.classList.add('d-none');
+  }
   document.getElementById('f-security').value = existing ? existing.security || 'any' : 'any';
   document.getElementById('f-color-depth').value = existing ? existing.color_depth || '16' : '16';
   document.getElementById('f-ignore-cert').checked = existing ? !!existing.ignore_cert : true;
@@ -1427,6 +1449,7 @@ form.addEventListener('submit', async (e) => {
     domain: document.getElementById('f-domain').value,
     username: document.getElementById('f-username').value,
     password: document.getElementById('f-password').value,
+    clearPassword: document.getElementById('f-clear-password').checked,
     security: document.getElementById('f-security').value,
     color_depth: document.getElementById('f-color-depth').value,
     ignore_cert: document.getElementById('f-ignore-cert').checked,

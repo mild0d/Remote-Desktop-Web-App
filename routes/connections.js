@@ -13,7 +13,7 @@ const { getHistoryForConnection } = require('../lib/reachabilityHistory');
 const router = express.Router();
 
 function stripPassword({ password, ...rest }) {
-  return rest;
+  return { ...rest, hasPassword: Boolean(password) };
 }
 
 // Every route below is mounted behind requireLogin in server.js, so
@@ -279,7 +279,7 @@ router.put('/:id', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
 
   const existing = list[idx];
-  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags } = req.body || {};
+  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, clearPassword } = req.body || {};
 
   list[idx] = {
     ...existing,
@@ -287,7 +287,11 @@ router.put('/:id', (req, res) => {
     hostname: hostname ?? existing.hostname,
     port: port ? parseInt(port, 10) : existing.port,
     username: username ?? existing.username,
-    password: password ? encrypt(password) : existing.password,
+    // A blank password field alone still preserves whatever's already
+    // saved (unchanged from before) - clearPassword is a separate,
+    // explicit signal specifically for wiping it, so the connection
+    // falls back to the user's default credentials instead.
+    password: clearPassword ? '' : password ? encrypt(password) : existing.password,
     domain: domain ?? existing.domain,
     security: security ?? existing.security,
     ignore_cert: ignore_cert === undefined ? existing.ignore_cert : ignore_cert ? 1 : 0,

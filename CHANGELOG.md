@@ -7,6 +7,25 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.2.1] - 2026-08-03
+
+### Added
+- A "Clear the saved password" checkbox now appears when editing a
+  connection that has its own saved password - previously there was no
+  way to actually remove one once set, since leaving the password field
+  blank always preserved whatever was already saved. Checking this box
+  and saving clears it, so the connection falls back to the account's
+  default credentials.
+
+## [1.2.0] - 2026-08-03
+
+### Added
+- Editing a connection now shows whether it has its own saved password,
+  or whether it's currently falling back to your default credentials -
+  there was previously no way to tell the difference, since the password
+  field always appeared blank either way. The real password is still
+  never sent back or displayed, even masked - only a status indicator.
+
 ## [1.1.0] - 2026-07-29
 
 ### Added

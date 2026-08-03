@@ -227,6 +227,23 @@ A few things worth knowing:
 - Use **Test connection** in the config screen to confirm the bind
   credentials (and certificate, for `ldaps://`) actually work before saving.
 
+### Knowing whether a connection has its own saved password
+
+Editing a connection now shows clearly whether it has its own password
+saved, or whether it's currently falling back to your default
+credentials - useful after changing your own password, since any
+connection *without* its own saved password picks up the new default
+automatically, while one *with* its own saved password needs updating
+separately. The real password itself is still never sent back or
+displayed, even masked - only this status.
+
+If a connection does have its own saved password, a **"Clear the saved
+password"** checkbox appears - checking it and saving removes that
+connection's own password entirely, so it falls back to using your
+default credentials instead. Leaving the password field blank *without*
+checking this box still just preserves whatever's already saved,
+unchanged - the checkbox is what actually clears it.
+
 ### Share a connection with a teammate
 
 Click the **⋮** menu on any connection card → **Share** → pick a teammate
