@@ -7,6 +7,17 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.2.3] - 2026-08-03
+
+### Fixed
+- Copying text *out of* a session (remote-to-host direction) didn't work
+  at all - a genuine JavaScript bug introduced in 1.0.2's echo-detection
+  fix, referencing a `session` variable that was never actually declared
+  in that scope, throwing an uncaught exception on every single attempt
+  before it ever got to writing anything to the host clipboard. Fixed by
+  correctly fetching the session object the same way every other part of
+  this code already does.
+
 ## [1.2.2] - 2026-08-03
 
 ### Fixed

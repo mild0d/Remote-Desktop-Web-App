@@ -1844,6 +1844,8 @@ async function openOrFocusSession(id, name) {
       let data = '';
       reader.ontext = (text) => { data += text; };
       reader.onend = () => {
+        const session = sessions.get(key);
+        if (!session) return;
         // RDP clipboard redirection can echo back a change notification
         // for content this app itself just pushed to the remote session
         // (direction 2, below) - if that echo arrives after the user has
