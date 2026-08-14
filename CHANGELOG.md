@@ -7,6 +7,23 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.2.2] - 2026-08-03
+
+### Fixed
+- Pasting into a session could paste content twice in a row. Root cause:
+  the previous fixes only ever intercepted the single 'V' keydown event
+  of a Ctrl+V press, then separately replayed a full Ctrl+V sequence
+  afterward - but the Control keydown that precedes it, and the V/Control
+  keyup events that follow it, were all still being forwarded to the
+  remote session completely normally the whole time. That meant the
+  remote machine could receive an overlapping, inconsistent mix of the
+  user's real key signals and the separately-simulated ones at the same
+  time. Reworked to suppress ALL keyboard forwarding for the entire
+  duration of handling a paste, not just the one keystroke, so nothing
+  from the user's real keypresses can reach the remote session while a
+  clean, single, self-contained Ctrl+V sequence is being sent on its
+  behalf - then resumes normal forwarding immediately after.
+
 ## [1.2.1] - 2026-08-03
 
 ### Added

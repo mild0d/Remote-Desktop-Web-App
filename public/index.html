@@ -1660,14 +1660,25 @@ function sendTextToActiveSession(text) {
 // CAPTURE phase specifically - Guacamole.Keyboard's own internal listener
 // (which forwards literal keystrokes to the remote session) uses the
 // default bubble phase, and capture-phase listeners always run first
-// regardless of registration order. That matters a lot here: without
-// this, the literal Ctrl+V keystroke would reach the remote machine and
-// trigger ITS OWN native paste using whatever was already in its
-// clipboard buffer, before this handler's async clipboard read even
-// finishes - a race that the remote machine's synchronous keystroke
-// forwarding would almost always win, resulting in a stale paste. This
-// was the actual root cause of paste being "spotty" - not a browser
-// permission issue.
+// regardless of registration order.
+//
+// This used to only intercept the single 'V' keydown event, then
+// manually replay a full Ctrl+V sequence afterward - but that left the
+// Control keydown that precedes it, and the V/Control keyup events that
+// follow it, all still being forwarded normally via the untouched
+// sharedKeyboard listener. That meant the remote machine could receive
+// an overlapping, inconsistent mix of the user's own real key signals
+// AND this handler's manually-simulated ones at the same time, which is
+// what was actually causing occasional double-pastes. Real Windows RDP
+// never has this problem, because it treats the keyboard and the
+// clipboard as one single native operation, not two independently
+// racing browser-side mechanisms.
+//
+// The fix: suppress ALL keyboard forwarding for the entire duration of
+// handling this paste - not just the one keydown - so nothing from the
+// user's real keypresses can reach the remote session while this is in
+// progress, then hand the remote machine one single, clean, self-
+// contained Ctrl+V sequence, and only then resume normal forwarding.
 document.addEventListener('keydown', (e) => {
   if (activeKey === 'list') return;
   const isPasteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'v';
@@ -1676,22 +1687,20 @@ document.addEventListener('keydown', (e) => {
   const session = sessions.get(activeKey);
   if (!session || !session.client) return;
 
-  // Stops this specific keydown from ever reaching Guacamole's own
-  // (bubble-phase) forwarding listener - the literal keystroke is
-  // re-sent manually below, only after the clipboard update completes.
   e.preventDefault();
   e.stopPropagation();
+
+  // Stops the real V-up and Control-up (and Control-down, if it hasn't
+  // fired yet) from being forwarded normally while this is in progress -
+  // resumed once the manual sequence below has been sent.
+  disableKeyboardForwarding();
 
   navigator.clipboard.readText().then((text) => {
     sendTextToActiveSession(text); // updates the remote session's clipboard buffer first
     // Pushing the clipboard update and simulating the keypress in the
-    // right JS execution order (previous fix) isn't actually enough on
-    // its own - the update still has to travel browser -> guacd -> RDP
-    // protocol -> the remote machine's own OS clipboard, which takes
-    // real time. Without waiting for that round-trip, the simulated
-    // keypress below could still reach the remote session and trigger
-    // its native paste before the update has actually landed there,
-    // using whatever was already in its clipboard. This delay is a
+    // right JS execution order isn't enough on its own - the update
+    // still has to travel browser -> guacd -> RDP protocol -> the remote
+    // machine's own OS clipboard, which takes real time. This delay is a
     // pragmatic buffer for that round-trip - there's no explicit
     // "clipboard update confirmed" signal available to wait on instead.
     setTimeout(() => {
@@ -1699,9 +1708,11 @@ document.addEventListener('keydown', (e) => {
       session.client.sendKeyEvent(1, 0x0076); // v down
       session.client.sendKeyEvent(0, 0x0076); // v up
       session.client.sendKeyEvent(0, 0xffe3); // Control_L up
-    }, 150);
+      enableKeyboardForwarding(session); // resume normal typing
+    }, 200);
   }).catch((err) => {
     console.warn('[clipboard] Could not read local clipboard (permission denied/dismissed?):', err);
+    enableKeyboardForwarding(session); // don't leave forwarding disabled if the read itself failed
   });
 }, true); // true = capture phase, see comment above
 
