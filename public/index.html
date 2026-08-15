@@ -153,6 +153,7 @@
   <div id="session-controls">
     <span id="active-status">Connecting…</span>
     <button class="btn btn-outline-light btn-sm" id="screenshot-btn">📷 Screenshot</button>
+    <button class="btn btn-outline-light btn-sm" id="ctrl-alt-del-btn" title="Send Ctrl+Alt+Del to the remote session">⌨️ Ctrl+Alt+Del</button>
     <button class="btn btn-outline-light btn-sm" id="files-btn">📁 Files</button>
     <button class="btn btn-outline-light btn-sm" id="shared-back-btn">← Back to list</button>
     <button class="btn btn-danger btn-sm" id="shared-disconnect-btn">Disconnect</button>
@@ -2545,6 +2546,25 @@ document.getElementById('screenshot-btn').addEventListener('click', async () => 
     console.warn('[screenshot] Failed to capture screenshot:', err);
     alert('Failed to capture screenshot. See the browser console for details.');
   }
+});
+
+// Ctrl+Alt+Del is intercepted by the operating system itself, beneath
+// the browser entirely - there is no way for any web app to ever capture
+// it as a real keypress and forward it, regardless of how keyboard
+// forwarding is implemented. The only way to trigger it on the remote
+// session is to simulate the sequence directly via the protocol, which
+// is exactly what every other remote desktop tool (including real
+// Guacamole deployments) does for this specific combination.
+document.getElementById('ctrl-alt-del-btn').addEventListener('click', () => {
+  const session = sessions.get(activeKey);
+  if (!session || !session.client) return;
+
+  session.client.sendKeyEvent(1, 0xffe3); // Control_L down
+  session.client.sendKeyEvent(1, 0xffe9); // Alt_L down
+  session.client.sendKeyEvent(1, 0xffff); // Delete down
+  session.client.sendKeyEvent(0, 0xffff); // Delete up
+  session.client.sendKeyEvent(0, 0xffe9); // Alt_L up
+  session.client.sendKeyEvent(0, 0xffe3); // Control_L up
 });
 
 document.getElementById('files-btn').addEventListener('click', () => {

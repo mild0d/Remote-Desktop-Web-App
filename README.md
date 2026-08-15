@@ -119,6 +119,15 @@ real "Save As" dialog letting you pick the exact folder and filename; in
 browsers without that capability (Firefox, Safari), it falls back to a
 normal download into your default Downloads folder instead.
 
+### Send Ctrl+Alt+Del
+
+**⌨️ Ctrl+Alt+Del** in the session toolbar sends that key combination to
+the remote session. This can't work as a real keypress no matter how
+keyboard forwarding is implemented - Ctrl+Alt+Del is intercepted by the
+operating system itself, beneath the browser entirely - so this button
+simulates the sequence directly instead, the same approach every other
+remote desktop tool uses for this specific combination.
+
 ### Reachability indicator
 
 Each card shows a small dot next to its name — green if the host currently

@@ -7,6 +7,14 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.3.0] - 2026-08-03
+
+### Added
+- **⌨️ Ctrl+Alt+Del** button in the session toolbar, next to Screenshot -
+  sends that key combination to the remote session by simulating it
+  directly, since it's intercepted by the operating system itself and
+  can never be captured as a real browser keypress.
+
 ## [1.2.3] - 2026-08-03
 
 ### Fixed
