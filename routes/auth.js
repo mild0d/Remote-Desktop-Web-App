@@ -21,6 +21,9 @@ const {
   getLockoutMinutesRemaining,
   recordFailedLogin,
   recordSuccessfulLogin,
+  generateRecoveryCodes,
+  verifyRecoveryCode,
+  getRecoveryCodesStatus,
   LOCKOUT_DURATION_MS,
 } = require('../lib/users');
 const { getSettings } = require('../lib/settings');
@@ -193,7 +196,14 @@ router.post('/verify-2fa', authRateLimiter, (req, res) => {
   const secret = getTotpSecret(pendingUserId);
   const user = findById(pendingUserId);
 
-  if (!user || !secret || !verifyToken(secret, code)) {
+  // A recovery code is checked as a fallback if the normal TOTP code
+  // doesn't verify - this lets someone log in even if they've lost
+  // access to their authenticator app entirely, without needing an
+  // admin to disable 2FA for them first.
+  const totpValid = user && secret && verifyToken(secret, code);
+  const usedRecoveryCode = !totpValid && user && verifyRecoveryCode(pendingUserId, code);
+
+  if (!user || (!totpValid && !usedRecoveryCode)) {
     logLoginEvent({
       username: user ? user.username : `user #${pendingUserId}`,
       success: false,
@@ -203,7 +213,12 @@ router.post('/verify-2fa', authRateLimiter, (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired code' });
   }
 
-  logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA)', ip: req.ip });
+  logLoginEvent({
+    username: user.username,
+    success: true,
+    reason: usedRecoveryCode ? 'Login successful (recovery code)' : 'Login successful (2FA)',
+    ip: req.ip,
+  });
 
   // Fresh session ID before granting real access - regenerate() creates an
   // entirely new session, so the old pending2FAUserId is naturally gone
@@ -212,7 +227,12 @@ router.post('/verify-2fa', authRateLimiter, (req, res) => {
     if (err) return res.status(500).json({ error: 'Failed to create session' });
     req.session.userId = user.id;
     req.session.username = user.username;
-    res.json({ ok: true, username: user.username });
+    const response = { ok: true, username: user.username };
+    if (usedRecoveryCode) {
+      response.usedRecoveryCode = true;
+      response.recoveryCodesRemaining = getRecoveryCodesStatus(user.id).remaining;
+    }
+    res.json(response);
   });
 });
 
@@ -222,6 +242,23 @@ router.post('/logout', (req, res) => {
 
 // /api/auth isn't mounted behind requireLogin (login/register/me must work
 // without a session), so these routes check for one themselves.
+router.get('/recovery-codes/status', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  res.json(getRecoveryCodesStatus(req.session.userId));
+});
+
+// Generates a brand new batch, replacing any existing one entirely - the
+// only moment the plaintext codes are ever available anywhere.
+router.post('/recovery-codes/generate', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  const recoveryCodes = generateRecoveryCodes(req.session.userId);
+  res.json({ ok: true, recoveryCodes });
+});
+
 router.post('/change-password', (req, res) => {
   if (!req.session || !req.session.userId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -335,6 +372,14 @@ router.post('/2fa/confirm', (req, res) => {
 
   confirmTotp(userId);
 
+  // Generated at the moment 2FA setup completes - this is the only
+  // opportunity to ever show these in plaintext, since only bcrypt
+  // hashes of them are stored afterward. If this is completing the
+  // mandatory pre-login setup flow (wasPendingSetup below), these still
+  // need to reach the response even though that branch also regenerates
+  // the session - captured now, before anything else changes.
+  const recoveryCodes = generateRecoveryCodes(userId);
+
   // If this completed the mandatory pre-login setup flow, promote the
   // session to real access now that 2FA is genuinely confirmed. Captured
   // before regenerate() below, since that creates an entirely fresh
@@ -349,10 +394,10 @@ router.post('/2fa/confirm', (req, res) => {
       req.session.userId = user.id;
       req.session.username = user.username;
       logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA setup completed)', ip: req.ip });
-      res.json({ ok: true });
+      res.json({ ok: true, recoveryCodes });
     });
   } else {
-    res.json({ ok: true });
+    res.json({ ok: true, recoveryCodes });
   }
 });
 

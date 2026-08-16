@@ -7,6 +7,17 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.4.0] - 2026-08-03
+
+### Added
+- **2FA recovery codes** - a set of 8 one-time codes shown once right
+  after 2FA setup completes, letting you log in without your
+  authenticator app if you ever lose access to it, without needing an
+  admin to reset your 2FA. Stored as bcrypt hashes, never in plaintext,
+  same treatment as passwords. Existing accounts can generate their own
+  first batch anytime from ⚙️ 2FA, since there's no way to retroactively
+  show codes that should have been shown at original setup time.
+
 ## [1.3.0] - 2026-08-03
 
 ### Added

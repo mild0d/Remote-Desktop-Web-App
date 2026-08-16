@@ -397,6 +397,26 @@
         reset it for you from the Admin panel - you'll then set it up again
         (on a new device) the next time you log in.
       </p>
+      <hr />
+      <h3 class="h6">Recovery codes</h3>
+      <p class="text-secondary small" id="recovery-codes-status-text">Loading...</p>
+      <p class="text-secondary small">
+        Recovery codes let you log in if you ever lose access to your
+        authenticator app, without needing an admin to reset your 2FA for
+        you. Each code works once. Generating a new batch immediately
+        invalidates any existing codes.
+      </p>
+      <button type="button" class="btn btn-outline-light btn-sm mb-2" id="twofa-generate-recovery-btn">Generate new recovery codes</button>
+      <div class="d-none" id="twofa-recovery-codes-display">
+        <div class="text-danger small mb-2">
+          Save these now - they won't be shown again. Any previous codes no longer work.
+        </div>
+        <pre class="bg-dark text-light p-3 rounded" id="twofa-recovery-codes-list" style="font-size:1rem;"></pre>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-light btn-sm" id="twofa-recovery-copy-btn">Copy all</button>
+          <button type="button" class="btn btn-outline-light btn-sm" id="twofa-recovery-download-btn">Download as text file</button>
+        </div>
+      </div>
       <div class="app-panel-footer">
         <button type="button" class="btn btn-outline-light" id="twofa-enabled-close-btn">Close</button>
       </div>
@@ -2445,12 +2465,58 @@ settingsForm.addEventListener('submit', async (e) => {
 
 // --- Two-factor authentication ---
 const twofaModalBackdrop = document.getElementById('twofa-modal-backdrop');
+const recoveryCodesStatusText = document.getElementById('recovery-codes-status-text');
+const twofaRecoveryCodesDisplay = document.getElementById('twofa-recovery-codes-display');
+const twofaRecoveryCodesList = document.getElementById('twofa-recovery-codes-list');
+
+async function loadRecoveryCodesStatus() {
+  const res = await fetch('/api/auth/recovery-codes/status');
+  if (!res.ok) {
+    recoveryCodesStatusText.textContent = 'Failed to load recovery code status.';
+    return;
+  }
+  const data = await res.json();
+  recoveryCodesStatusText.textContent = data.total > 0
+    ? `${data.remaining} of ${data.total} recovery codes remaining.`
+    : 'No recovery codes generated yet.';
+}
 
 document.getElementById('twofa-settings-btn').addEventListener('click', () => {
   twofaModalBackdrop.classList.add('open');
+  twofaRecoveryCodesDisplay.classList.add('d-none');
+  loadRecoveryCodesStatus();
 });
 document.getElementById('twofa-enabled-close-btn').addEventListener('click', () => {
   twofaModalBackdrop.classList.remove('open');
+});
+
+document.getElementById('twofa-generate-recovery-btn').addEventListener('click', async () => {
+  if (!confirm('Generate new recovery codes? Any existing codes will stop working immediately.')) return;
+  const res = await fetch('/api/auth/recovery-codes/generate', { method: 'POST' });
+  if (!res.ok) {
+    alert('Failed to generate recovery codes.');
+    return;
+  }
+  const data = await res.json();
+  twofaRecoveryCodesList.textContent = data.recoveryCodes.join('\n');
+  twofaRecoveryCodesDisplay.classList.remove('d-none');
+  loadRecoveryCodesStatus();
+});
+
+document.getElementById('twofa-recovery-copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(twofaRecoveryCodesList.textContent).catch(() => {});
+});
+
+document.getElementById('twofa-recovery-download-btn').addEventListener('click', () => {
+  const blob = new Blob([twofaRecoveryCodesList.textContent + '\n'], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'recovery-codes.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 });
 
 // --- Shared drive file transfer ---

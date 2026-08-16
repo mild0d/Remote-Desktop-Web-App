@@ -522,6 +522,30 @@ git update-index --chmod=+x setup.sh start.sh stop.sh
 git commit -m "Track setup/start/stop scripts as executable"
 ```
 
+## 2FA recovery codes
+
+Right after setting up two-factor authentication (either during account
+creation, or from **⚙️ 2FA** in an existing account), you'll see a set of
+8 one-time recovery codes - **this is the only time they're ever shown**,
+since only a hashed version is kept afterward, the same treatment given
+to your actual password. Save them somewhere safe, like a password
+manager.
+
+If you ever lose access to your authenticator app, click **"Use a
+recovery code instead"** on the login verification screen and enter one
+in place of the 6-digit code - this lets you get back into your own
+account without needing an admin to intervene. Each code works exactly
+once; using one crosses it off permanently.
+
+Generate a fresh batch anytime from **⚙️ 2FA → Generate new recovery
+codes** - this immediately invalidates every existing code, so there's
+never an unbounded pile of old ones to keep track of.
+
+**Existing accounts don't get recovery codes automatically** - there's no
+way to retroactively show you something you should have seen when you
+first set up 2FA. Generate a batch yourself from **⚙️ 2FA** whenever's
+convenient.
+
 ## Backups
 
 **🛡️ Admin → 💾 Backups** creates a zip snapshot of everything in

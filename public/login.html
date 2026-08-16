@@ -51,12 +51,13 @@
 
       <form id="twofa-form" class="d-none">
         <h2 class="card-title mb-3">Enter your code</h2>
-        <p class="text-secondary small">Enter the 6-digit code from your authenticator app.</p>
+        <p class="text-secondary small" id="twofa-instructions">Enter the 6-digit code from your authenticator app.</p>
         <div class="mb-3">
           <input id="twofa-code" class="form-control text-center" style="font-size:1.5rem; letter-spacing:0.3rem;" maxlength="6" inputmode="numeric" autocomplete="one-time-code" autofocus required />
         </div>
         <div class="text-danger small mb-2" id="twofa-error"></div>
-        <button type="submit" class="btn btn-primary w-100">Verify</button>
+        <button type="submit" class="btn btn-primary w-100 mb-2">Verify</button>
+        <button type="button" class="btn btn-link btn-sm w-100" id="twofa-use-recovery-toggle">Use a recovery code instead</button>
       </form>
 
       <div id="setup2fa-section" class="d-none">
@@ -79,6 +80,22 @@
           <div class="text-danger small mb-2" id="setup2fa-error"></div>
           <button type="submit" class="btn btn-primary w-100">Confirm and finish setup</button>
         </form>
+      </div>
+
+      <div id="recovery-codes-section" class="d-none">
+        <h2 class="card-title mb-3">Save your recovery codes</h2>
+        <p class="text-secondary small">
+          If you ever lose access to your authenticator app, one of these
+          codes will let you log in instead - <strong>this is the only
+          time they'll ever be shown</strong>. Save them somewhere safe,
+          like a password manager. Each code works once.
+        </p>
+        <pre id="recovery-codes-list" class="bg-dark text-light p-3 rounded" style="font-size:1.1rem; letter-spacing:0.05rem;"></pre>
+        <div class="d-flex gap-2 mb-3">
+          <button type="button" class="btn btn-outline-light btn-sm" id="recovery-codes-copy-btn">Copy all</button>
+          <button type="button" class="btn btn-outline-light btn-sm" id="recovery-codes-download-btn">Download as text file</button>
+        </div>
+        <button type="button" class="btn btn-primary w-100" id="recovery-codes-continue-btn">I've saved these - continue</button>
       </div>
 
     </div>
@@ -192,6 +209,10 @@
       });
 
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.usedRecoveryCode && data.recoveryCodesRemaining <= 2) {
+          alert(`You logged in with a recovery code. Only ${data.recoveryCodesRemaining} remain - consider generating a fresh batch soon from ⚙️ Settings.`);
+        }
         window.location.href = '/';
       } else {
         const data = await res.json().catch(() => ({}));
@@ -237,11 +258,73 @@
       });
 
       if (res.ok) {
-        window.location.href = '/';
+        const data = await res.json().catch(() => ({}));
+        if (data.recoveryCodes) {
+          setup2faSection.classList.add('d-none');
+          showRecoveryCodes(data.recoveryCodes);
+        } else {
+          window.location.href = '/';
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         setup2faError.textContent = data.error || 'Incorrect code - try again';
       }
+    });
+
+    // --- Recovery codes display (shown once, right after 2FA setup) ---
+    const recoveryCodesSection = document.getElementById('recovery-codes-section');
+    const recoveryCodesList = document.getElementById('recovery-codes-list');
+
+    function showRecoveryCodes(codes) {
+      recoveryCodesList.textContent = codes.join('\n');
+      recoveryCodesSection.classList.remove('d-none');
+    }
+
+    document.getElementById('recovery-codes-copy-btn').addEventListener('click', () => {
+      navigator.clipboard.writeText(recoveryCodesList.textContent).catch(() => {});
+    });
+
+    document.getElementById('recovery-codes-download-btn').addEventListener('click', () => {
+      const blob = new Blob([recoveryCodesList.textContent + '\n'], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'recovery-codes.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('recovery-codes-continue-btn').addEventListener('click', () => {
+      window.location.href = '/';
+    });
+
+    // --- "Use a recovery code instead" toggle on the login verify step ---
+    const twofaCodeInput = document.getElementById('twofa-code');
+    const twofaInstructions = document.getElementById('twofa-instructions');
+    const twofaRecoveryToggle = document.getElementById('twofa-use-recovery-toggle');
+    let usingRecoveryCode = false;
+
+    twofaRecoveryToggle.addEventListener('click', () => {
+      usingRecoveryCode = !usingRecoveryCode;
+      twofaCodeInput.value = '';
+      if (usingRecoveryCode) {
+        twofaInstructions.textContent = 'Enter one of your recovery codes.';
+        twofaCodeInput.removeAttribute('maxlength');
+        twofaCodeInput.removeAttribute('inputmode');
+        twofaCodeInput.style.letterSpacing = '';
+        twofaCodeInput.style.fontSize = '';
+        twofaRecoveryToggle.textContent = 'Use my authenticator app instead';
+      } else {
+        twofaInstructions.textContent = 'Enter the 6-digit code from your authenticator app.';
+        twofaCodeInput.maxLength = 6;
+        twofaCodeInput.inputMode = 'numeric';
+        twofaCodeInput.style.letterSpacing = '0.3rem';
+        twofaCodeInput.style.fontSize = '1.5rem';
+        twofaRecoveryToggle.textContent = 'Use a recovery code instead';
+      }
+      twofaCodeInput.focus();
     });
   </script>
 </body>
