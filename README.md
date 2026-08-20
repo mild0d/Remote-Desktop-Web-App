@@ -1,15 +1,4 @@
 # RDP Web App
-
-A minimal, self-hosted web app for opening RDP sessions from a browser.
-List, add, and delete RDP connections through a single-page UI; click
-"Connect" to open a live RDP session rendered in a `<canvas>`.
-
-**Self-service accounts, no database** — anyone can register their own
-account (just a username/password, no email), and each person's saved
-connections are private to them. Both users and connections are stored in
-flat JSON files rather than a database, and the entire frontend is one HTML
-file (`public/index.html`) with inline CSS/JS.
-
 ## How it works
 
 ```
@@ -26,6 +15,9 @@ Browser  <--WebSocket-->  Node app (Express + guacamole-lite)  <--Guacamole prot
 - **Our own app** (Express + flat JSON files + one HTML file) handles
   login/registration, "list / add / delete connections" scoped per user, and
   asks guacamole-lite to open a session on demand.
+
+  <img width="900" height="700" alt="screenshot-login" src="https://github.com/user-attachments/assets/d2e42c7d-2334-49f5-bb6c-3c23bbf7b523" /><img width="1360" height="900" alt="screenshot-connections-grid" src="https://github.com/user-attachments/assets/79a62774-0cee-423c-a75c-a1ecd97971ba" />
+<img width="1000" height="640" alt="screenshot-admin-panel" src="https://github.com/user-attachments/assets/311b5b41-08a2-4791-93a9-84f70fb1c6c4" />
 
 ## Requirements
 
