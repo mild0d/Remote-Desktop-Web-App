@@ -111,6 +111,16 @@ These are per-user settings, not shared across accounts — everyone on the
 same AD domain would set the same values, but nothing stops different users
 setting different ones if they connect to different environments.
 
+### Connecting without saved credentials
+
+If a connection has no saved username/password of its own, and your
+account has no default credentials set either, clicking **Connect**
+prompts for a username and password right there instead of connecting
+with nothing - useful if you'd simply rather not save credentials at
+all and don't mind entering them each time. Whatever's typed in is used
+for that one connection attempt only and is never saved anywhere, not to
+the connection and not to your account's defaults.
+
 ### Screenshot
 
 **📷 Screenshot** in the session toolbar captures the current session at
@@ -252,6 +262,12 @@ connection's own password entirely, so it falls back to using your
 default credentials instead. Leaving the password field blank *without*
 checking this box still just preserves whatever's already saved,
 unchanged - the checkbox is what actually clears it.
+
+The same applies to your account's own default password, in **⚙️
+Settings** - if one is currently saved, a **"Clear the saved default
+password"** checkbox appears there too, for anyone who'd simply rather
+not have a default password saved at all and prefers being prompted at
+connect time instead (see "Connecting without saved credentials" above).
 
 ### Share a connection with a teammate
 

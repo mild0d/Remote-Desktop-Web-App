@@ -312,9 +312,9 @@ router.post('/default-credentials', (req, res) => {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  const { username, password, hostname_suffix, netbios_domain } = req.body || {};
+  const { username, password, hostname_suffix, netbios_domain, clearPassword } = req.body || {};
   try {
-    setDefaultCredentials(req.session.userId, username, password, hostname_suffix, netbios_domain);
+    setDefaultCredentials(req.session.userId, username, password, hostname_suffix, netbios_domain, clearPassword);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save default credentials' });

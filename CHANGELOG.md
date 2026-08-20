@@ -7,6 +7,48 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.6.2] - 2026-08-20
+
+### Fixed
+- The connect-time credential prompt (1.6.0) wasn't showing up even after
+  clearing both a connection's own password and the account's default
+  password. Cause: the app checked a cached copy of the account's default
+  credential status that was only ever fetched once, at page load, and
+  never refreshed afterward - so clearing the default password via
+  Settings had no effect on that check until a full page reload. Fixed
+  by updating the cached status immediately after saving Settings,
+  instead of only at page load.
+
+## [1.6.1] - 2026-08-20
+
+### Added
+- A "Clear the saved default password" checkbox in ⚙️ Settings, when one
+  is currently saved - the same gap that existed for connection-level
+  passwords before 1.2.1 also existed for the account-level default,
+  since leaving the field blank there only ever preserved whatever was
+  already saved, with no way to actually remove it. Useful for anyone
+  who'd rather not have a default password saved at all and prefers
+  being prompted at connect time instead (1.6.0).
+
+## [1.6.0] - 2026-08-20
+
+### Added
+- A connect-time credential prompt for connections with no saved
+  username/password and no account-level defaults either - previously
+  this would silently connect with no credentials at all, leaving the
+  remote machine's own login screen to handle it inside the session.
+  Useful for anyone who'd simply rather not save credentials in the app
+  at all. Whatever's entered is used for that one connection attempt
+  only and is never saved anywhere - not to the connection, not to the
+  account's defaults.
+
+### Changed
+- The session-token endpoint (`POST /api/connections/:id/token`) changed
+  from GET to POST, to safely accept these one-time credentials in the
+  request body rather than a query string. This is an internal endpoint
+  only ever called by this app's own frontend, so this has no impact on
+  anything else.
+
 ## [1.5.1] - 2026-08-20
 
 ### Fixed

@@ -346,6 +346,32 @@
   </div>
 </div>
 
+<div class="app-overlay" id="connect-prompt-modal-backdrop">
+  <div class="card" style="width: 420px; max-width: 90vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Sign in to <span id="connect-prompt-conn-name"></span></h2>
+      <p class="text-secondary small">
+        This connection has no saved credentials. Enter them for this
+        session only - they won't be saved anywhere.
+      </p>
+      <form id="connect-prompt-form">
+        <div class="mb-3">
+          <label class="form-label">Username</label>
+          <input id="connect-prompt-username" class="form-control" autocomplete="username" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input id="connect-prompt-password" type="password" class="form-control" autocomplete="current-password" />
+        </div>
+        <div class="app-panel-footer">
+          <button type="button" class="btn btn-outline-light" id="connect-prompt-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Connect</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="app-overlay" id="settings-modal-backdrop">
   <div class="card" style="width: 420px; max-width: 90vw;">
     <div class="card-body">
@@ -365,6 +391,10 @@
           <label class="form-label">Default password</label>
           <input id="settings-password" type="password" class="form-control" placeholder="Leave blank to keep existing" />
           <div class="form-text" id="settings-password-status"></div>
+          <div class="form-check mt-1 d-none" id="settings-clear-password-wrap">
+            <input class="form-check-input" type="checkbox" id="settings-clear-password" />
+            <label class="form-check-label small" for="settings-clear-password">Clear the saved default password</label>
+          </div>
         </div>
         <div class="mb-3">
           <label class="form-label">Hostname suffix</label>
@@ -782,6 +812,13 @@ function escapeHtml(str) {
 }
 
 let currentConns = [];
+// Fetched once and cached - used to decide whether a connection needs an
+// ad-hoc credential prompt at connect time (see maybeShowConnectPrompt).
+let defaultCredentialsStatus = { username: '', hasPassword: false };
+fetch('/api/auth/default-credentials')
+  .then((res) => (res.ok ? res.json() : null))
+  .then((data) => { if (data) defaultCredentialsStatus = data; })
+  .catch(() => {});
 let sortAscending = true;
 let searchQuery = '';
 let selectedTag = null;
@@ -1210,7 +1247,12 @@ rowsEl.addEventListener('click', async (e) => {
 
   if (connectId) {
     const name = e.target.getAttribute('data-name');
-    openOrFocusSession(connectId, name);
+    const conn = currentConns.find((c) => String(c.id) === String(connectId));
+    if (conn && needsCredentialPrompt(conn)) {
+      openConnectPrompt(connectId, name);
+    } else {
+      openOrFocusSession(connectId, name);
+    }
   }
 });
 
@@ -1777,7 +1819,47 @@ document.addEventListener('keydown', (e) => {
   });
 }, true); // true = capture phase, see comment above
 
-async function openOrFocusSession(id, name) {
+// True if this connection has neither its own saved username+password nor
+// anything usable from the account's saved defaults - meaning the RDP
+// session would otherwise start with no credentials at all. Checked
+// before connecting so the person can type them in for just this one
+// session, rather than discovering the gap only once the remote
+// machine's own login screen shows up inside the session.
+function needsCredentialPrompt(conn) {
+  const hasUsername = Boolean(conn.username) || Boolean(defaultCredentialsStatus.username);
+  const hasPassword = Boolean(conn.hasPassword) || Boolean(defaultCredentialsStatus.hasPassword);
+  return !hasUsername || !hasPassword;
+}
+
+const connectPromptModalBackdrop = document.getElementById('connect-prompt-modal-backdrop');
+const connectPromptForm = document.getElementById('connect-prompt-form');
+let connectPromptPendingId = null;
+let connectPromptPendingName = null;
+
+function openConnectPrompt(id, name) {
+  connectPromptPendingId = id;
+  connectPromptPendingName = name;
+  document.getElementById('connect-prompt-conn-name').textContent = name;
+  document.getElementById('connect-prompt-username').value = '';
+  document.getElementById('connect-prompt-password').value = '';
+  connectPromptModalBackdrop.classList.add('open');
+}
+
+document.getElementById('connect-prompt-cancel-btn').addEventListener('click', () => {
+  connectPromptModalBackdrop.classList.remove('open');
+});
+
+connectPromptForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const username = document.getElementById('connect-prompt-username').value;
+  const password = document.getElementById('connect-prompt-password').value;
+  connectPromptModalBackdrop.classList.remove('open');
+  // Passed straight through to this one connection attempt only - never
+  // saved to the connection or the account's defaults.
+  openOrFocusSession(connectPromptPendingId, connectPromptPendingName, { username, password });
+});
+
+async function openOrFocusSession(id, name, adHocCredentials) {
   const key = String(id);
 
   // Already open in a background tab - just switch to it, don't reconnect.
@@ -1816,7 +1898,14 @@ async function openOrFocusSession(id, name) {
     const requestWidth = displayArea.clientWidth;
     const requestHeight = displayArea.clientHeight;
 
-    const tokenRes = await fetch(`/api/connections/${id}/token?width=${requestWidth}&height=${requestHeight}`);
+    // adHocCredentials (if provided) came from the one-time connect
+    // prompt below - used only for this single request, never written
+    // to the connection or the account's saved defaults.
+    const tokenRes = await fetch(`/api/connections/${id}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ width: requestWidth, height: requestHeight, ...(adHocCredentials || {}) }),
+    });
     if (!tokenRes.ok) throw new Error('Failed to fetch session token');
     const { token } = await tokenRes.json();
 
@@ -2521,6 +2610,8 @@ document.getElementById('settings-btn').addEventListener('click', async () => {
   settingsForm.reset();
   settingsFormError.textContent = '';
   const data = await loadUserDefaults();
+  const clearPasswordWrap = document.getElementById('settings-clear-password-wrap');
+  document.getElementById('settings-clear-password').checked = false;
   if (data) {
     settingsUsernameInput.value = data.username || '';
     settingsHostnameSuffixInput.value = data.hostname_suffix || '';
@@ -2528,6 +2619,7 @@ document.getElementById('settings-btn').addEventListener('click', async () => {
     settingsPasswordStatus.textContent = data.hasPassword
       ? 'A default password is currently saved.'
       : 'No default password saved yet.';
+    clearPasswordWrap.classList.toggle('d-none', !data.hasPassword);
   }
   settingsModalBackdrop.classList.add('open');
 });
@@ -2547,12 +2639,23 @@ settingsForm.addEventListener('submit', async (e) => {
       password: settingsPasswordInput.value,
       hostname_suffix: settingsHostnameSuffixInput.value,
       netbios_domain: settingsNetbiosDomainInput.value,
+      clearPassword: document.getElementById('settings-clear-password').checked,
     }),
   });
 
   if (res.ok) {
     userHostnameSuffix = settingsHostnameSuffixInput.value;
     userNetbiosDomain = settingsNetbiosDomainInput.value;
+    // Keeps the connect-time prompt check (needsCredentialPrompt) working
+    // off the actual current state rather than what was cached at page
+    // load - without this, clearing the default password here wouldn't
+    // be reflected until a full page reload.
+    defaultCredentialsStatus = {
+      username: settingsUsernameInput.value,
+      hasPassword: document.getElementById('settings-clear-password').checked
+        ? false
+        : Boolean(settingsPasswordInput.value) || defaultCredentialsStatus.hasPassword,
+    };
     settingsModalBackdrop.classList.remove('open');
   } else {
     const data = await res.json().catch(() => ({}));

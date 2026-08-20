@@ -366,7 +366,7 @@ router.post('/:id/share', (req, res) => {
 // The ownership check here matters: without it, a logged-in user could
 // open ANY connection by guessing/incrementing ids, even ones never shown
 // in their own list.
-router.get('/:id/token', (req, res) => {
+router.post('/:id/token', (req, res) => {
   const conn = loadAll().find(
     (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
   );
@@ -375,13 +375,15 @@ router.get('/:id/token', (req, res) => {
   try {
     ensureUserDriveDir(req.session.userId);
 
+    const { width, height, username: adHocUsername, password: adHocPassword, domain: adHocDomain } = req.body || {};
+
     const settings = {
       hostname: conn.hostname,
       port: String(conn.port),
       'ignore-cert': conn.ignore_cert ? 'true' : 'false',
       security: conn.security || 'any',
-      width: String(req.query.width || '1280'),
-      height: String(req.query.height || '800'),
+      width: String(width || '1280'),
+      height: String(height || '800'),
       dpi: '96',
       'resize-method': 'display-update',
       'color-depth': String(conn.color_depth || '16'),
@@ -393,12 +395,14 @@ router.get('/:id/token', (req, res) => {
       'disable-upload': 'false',
       'enable-clipboard': 'true',
     };
-    // A connection's own username/password/domain take precedence; if any
-    // are left blank, fall back to the user's centrally-saved defaults.
+    // Precedence, highest first: credentials typed into the one-time
+    // connect prompt (never saved anywhere, used only for this single
+    // connection attempt) -> the connection's own saved values -> the
+    // user's centrally-saved defaults.
     const defaults = getDefaultCredentials(req.session.userId);
-    const effectiveUsername = conn.username || defaults.username;
-    const effectivePassword = conn.password ? decrypt(conn.password) : defaults.password;
-    const effectiveDomain = conn.domain || defaults.netbios_domain;
+    const effectiveUsername = adHocUsername || conn.username || defaults.username;
+    const effectivePassword = adHocPassword || (conn.password ? decrypt(conn.password) : defaults.password);
+    const effectiveDomain = adHocDomain || conn.domain || defaults.netbios_domain;
 
     if (effectiveUsername) settings.username = effectiveUsername;
     if (effectivePassword) settings.password = effectivePassword;
