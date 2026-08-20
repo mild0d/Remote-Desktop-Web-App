@@ -14,6 +14,8 @@ const { getRecentEvents, logAdminEvent } = require('../lib/auditLog');
 const { listActive, forceDisconnect } = require('../lib/activeSessions');
 const { getConfig: getADConfig, getConfigStatus: getADConfigStatus, setConfig: setADConfig } = require('../lib/adConfig');
 const { testConnection: testADConnection } = require('../lib/adBrowser');
+const { getConfigStatus: getSSOConfigStatus, setConfig: setSSOConfig } = require('../lib/ssoConfig');
+const { clearCache: clearSSOCache } = require('../lib/sso');
 const { deleteAllForUser: deleteConnectionsForUser } = require('../lib/store');
 const { deleteAllForUser: deleteThumbnailsForUser } = require('../lib/thumbnailStore');
 const { deleteAllForUser: deleteDriveForUser } = require('../lib/driveStore');
@@ -176,6 +178,21 @@ router.post('/ad-config/test', async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: `Connection failed: ${err.message}` });
   }
+});
+
+router.get('/sso-config', (req, res) => {
+  res.json(getSSOConfigStatus());
+});
+
+router.post('/sso-config', (req, res) => {
+  const { tenantId, clientId, clientSecret, enabled } = req.body || {};
+  if (enabled && (!tenantId || !clientId)) {
+    return res.status(400).json({ error: 'Tenant ID and Client ID are required to enable SSO' });
+  }
+  setSSOConfig({ tenantId, clientId, clientSecret, enabled });
+  clearSSOCache(); // a changed tenant/client invalidates whatever was previously discovered
+  logAdminEvent({ adminUsername: req.session.username, action: enabled ? 'Enabled SSO' : 'Updated SSO configuration' });
+  res.json({ ok: true });
 });
 
 router.get('/backup-settings', (req, res) => {

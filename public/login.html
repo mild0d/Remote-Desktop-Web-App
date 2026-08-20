@@ -12,6 +12,11 @@
 
       <form id="login-form">
         <h2 class="card-title mb-3">Sign in</h2>
+        <div class="text-danger small mb-2" id="sso-error"></div>
+        <div class="d-none mb-3" id="sso-login-section">
+          <button type="button" class="btn btn-outline-light w-100" id="sso-login-btn">Sign in with Microsoft</button>
+          <div class="text-center text-body-secondary small my-2">or</div>
+        </div>
         <div class="mb-3">
           <label for="login-username" class="form-label">Username</label>
           <input id="login-username" class="form-control" autocomplete="username" required />
@@ -125,6 +130,39 @@
       }
       return originalFetch(url, options);
     };
+
+    // --- SSO (shown only if an admin has configured and enabled it) ---
+    (async () => {
+      try {
+        const res = await originalFetch('/api/auth/sso/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.enabled) {
+            document.getElementById('sso-login-section').classList.remove('d-none');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to check SSO status', err);
+      }
+    })();
+
+    document.getElementById('sso-login-btn').addEventListener('click', () => {
+      window.location.href = '/api/auth/sso/login';
+    });
+
+    // Surfaces an error redirected back from a failed SSO attempt (see
+    // routes/auth.js's /sso/login and /sso/callback) - the query string is
+    // the only way to carry that message across the redirect back here.
+    {
+      const params = new URLSearchParams(window.location.search);
+      const ssoError = params.get('ssoError');
+      if (ssoError) {
+        document.getElementById('sso-error').textContent = ssoError;
+        // Cleans the error out of the URL so refreshing the page doesn't
+        // keep re-showing a stale message.
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
 
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');

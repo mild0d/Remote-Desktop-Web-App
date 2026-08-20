@@ -1,6 +1,6 @@
 {
   "name": "rdp-webapp",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Minimal self-hosted web app for launching RDP sessions in the browser via guacd + guacamole-lite",
   "main": "server.js",
@@ -23,6 +23,7 @@
     "jsdom": "^29.1.1",
     "ldapts": "^9.0.0",
     "multer": "^2.0.1",
+    "openid-client": "^6.8.6",
     "otplib": "^13.4.1",
     "qrcode": "^1.5.4",
     "selfsigned": "^2.4.1"

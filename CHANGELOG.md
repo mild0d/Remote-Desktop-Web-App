@@ -7,6 +7,24 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.5.0] - 2026-08-20
+
+### Added
+- **True single sign-on with Microsoft Entra ID** - people can sign in
+  with their existing Microsoft account instead of a separate
+  app-specific password. Unlike an earlier, reverted attempt at
+  AD-based login, this app never handles credentials directly at all -
+  authentication happens entirely on Microsoft's own login page, and this
+  app only ever receives a signed token back. Uses `openid-client`
+  (actively maintained) with the standard authorization code + PKCE flow.
+  Local login always stays fully available regardless of this setting,
+  for everyone - SSO is additive, never a replacement, and a single
+  admin-panel toggle can disable it instantly if needed. First-time SSO
+  logins auto-provision a local account (non-admin by default), matched
+  to the person's stable Entra identity rather than just their email.
+  SSO logins skip this app's own mandatory 2FA, trusting whatever MFA
+  policy the organization already enforces in Entra instead.
+
 ## [1.4.0] - 2026-08-03
 
 ### Added

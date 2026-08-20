@@ -509,6 +509,7 @@
         <button type="button" class="btn btn-outline-light" id="admin-active-sessions-btn">🖥️ Active sessions</button>
         <button type="button" class="btn btn-outline-light" id="admin-audit-log-btn">📋 View audit log</button>
         <button type="button" class="btn btn-outline-light" id="admin-ad-config-btn">🗂️ Active Directory</button>
+        <button type="button" class="btn btn-outline-light" id="admin-sso-config-btn">🔑 Single sign-on</button>
         <button type="button" class="btn btn-outline-light" id="admin-backups-btn">💾 Backups</button>
         <button type="button" class="btn btn-outline-light" id="admin-close-btn">Close</button>
       </div>
@@ -614,6 +615,45 @@
         <div class="app-panel-footer">
           <button type="button" class="btn btn-outline-light" id="ad-config-test-btn">Test connection</button>
           <button type="button" class="btn btn-outline-light" id="ad-config-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="sso-config-modal-backdrop">
+  <div class="card" style="width: 460px; max-width: 92vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Single sign-on (Microsoft Entra ID)</h2>
+      <p class="text-secondary small">
+        Lets people sign in with their existing Microsoft/Entra account
+        instead of a separate app-specific password - this app never sees
+        or handles their actual credentials. Local login always stays
+        available regardless of this setting, for everyone.
+      </p>
+      <form id="sso-config-form">
+        <div class="mb-3">
+          <label class="form-label">Tenant ID</label>
+          <input id="sso-config-tenant-id" class="form-control" placeholder="e.g. 11111111-2222-3333-4444-555555555555" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Client (Application) ID</label>
+          <input id="sso-config-client-id" class="form-control" placeholder="e.g. 66666666-7777-8888-9999-000000000000" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Client secret</label>
+          <input id="sso-config-client-secret" type="password" class="form-control" placeholder="Leave blank to keep existing" />
+          <div class="form-text" id="sso-config-secret-status"></div>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="sso-config-enabled" />
+          <label class="form-check-label" for="sso-config-enabled">Enable SSO login</label>
+        </div>
+        <div class="text-danger small mb-2" id="sso-config-error"></div>
+        <div class="text-success small mb-2" id="sso-config-success"></div>
+        <div class="app-panel-footer">
+          <button type="button" class="btn btn-outline-light" id="sso-config-cancel-btn">Cancel</button>
           <button type="submit" class="btn btn-primary">Save</button>
         </div>
       </form>
@@ -2100,6 +2140,63 @@ adConfigForm.addEventListener('submit', async (e) => {
   } else {
     const data = await res.json().catch(() => ({}));
     adConfigError.textContent = data.error || 'Failed to save Active Directory settings';
+  }
+});
+
+// --- Single sign-on (Entra) ---
+const ssoConfigModalBackdrop = document.getElementById('sso-config-modal-backdrop');
+const ssoConfigForm = document.getElementById('sso-config-form');
+const ssoConfigError = document.getElementById('sso-config-error');
+const ssoConfigSuccess = document.getElementById('sso-config-success');
+const ssoConfigTenantIdInput = document.getElementById('sso-config-tenant-id');
+const ssoConfigClientIdInput = document.getElementById('sso-config-client-id');
+const ssoConfigClientSecretInput = document.getElementById('sso-config-client-secret');
+const ssoConfigSecretStatus = document.getElementById('sso-config-secret-status');
+const ssoConfigEnabledInput = document.getElementById('sso-config-enabled');
+
+document.getElementById('admin-sso-config-btn').addEventListener('click', async () => {
+  ssoConfigForm.reset();
+  ssoConfigError.textContent = '';
+  ssoConfigSuccess.textContent = '';
+
+  const res = await fetch('/api/admin/sso-config');
+  if (res.ok) {
+    const data = await res.json();
+    ssoConfigTenantIdInput.value = data.tenantId || '';
+    ssoConfigClientIdInput.value = data.clientId || '';
+    ssoConfigEnabledInput.checked = Boolean(data.enabled);
+    ssoConfigSecretStatus.textContent = data.hasClientSecret
+      ? 'A client secret is currently saved.'
+      : 'No client secret saved yet.';
+  }
+  ssoConfigModalBackdrop.classList.add('open');
+});
+
+document.getElementById('sso-config-cancel-btn').addEventListener('click', () => {
+  ssoConfigModalBackdrop.classList.remove('open');
+});
+
+ssoConfigForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  ssoConfigError.textContent = '';
+  ssoConfigSuccess.textContent = '';
+
+  const res = await fetch('/api/admin/sso-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tenantId: ssoConfigTenantIdInput.value,
+      clientId: ssoConfigClientIdInput.value,
+      clientSecret: ssoConfigClientSecretInput.value,
+      enabled: ssoConfigEnabledInput.checked,
+    }),
+  });
+
+  if (res.ok) {
+    ssoConfigModalBackdrop.classList.remove('open');
+  } else {
+    const data = await res.json().catch(() => ({}));
+    ssoConfigError.textContent = data.error || 'Failed to save SSO settings';
   }
 });
 

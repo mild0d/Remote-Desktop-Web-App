@@ -546,6 +546,85 @@ way to retroactively show you something you should have seen when you
 first set up 2FA. Generate a batch yourself from **⚙️ 2FA** whenever's
 convenient.
 
+## Single sign-on (Microsoft Entra ID)
+
+Lets people sign in with their existing Microsoft/Entra account instead
+of a separate app-specific password. This app never sees or handles their
+actual credentials at any point - the entire authentication happens on
+Microsoft's own login page, and this app only ever receives a signed
+token back proving who they are afterward.
+
+**Local login always stays available, for everyone, regardless of this
+setting.** This is deliberate - SSO is additive, never a replacement. If
+anything about the Entra side goes wrong, nobody is locked out; the app
+behaves exactly as it did before this feature existed, with only the
+"Sign in with Microsoft" button disappearing.
+
+### Setting it up on the Entra side
+
+1. In the [Azure Portal](https://portal.azure.com), go to **Microsoft
+   Entra ID → App registrations → New registration**.
+2. Give it any name (e.g. "RDP Web App"). Leave the default account type
+   ("Accounts in this organizational directory only") unless you have a
+   specific reason not to.
+3. Under **Redirect URI**, select platform type **Web** and enter:
+   ```
+   https://your-actual-hostname/api/auth/sso/callback
+   ```
+   replacing `your-actual-hostname` with whatever hostname you actually
+   use to reach this app (matching the certificate/DNS name you use
+   today). This must match exactly, including `https://`.
+4. Click **Register**. On the app's **Overview** page, note down the
+   **Application (client) ID** and the **Directory (tenant) ID** - you'll
+   need both in a moment.
+5. Go to **Certificates & secrets → Client secrets → New client secret**.
+   Give it a description and an expiration, then click **Add**. **Copy
+   the secret's Value immediately** - it's only ever shown once, the same
+   way this app's own recovery codes work.
+6. (Recommended) Go to **Entra ID → Enterprise applications**, find this
+   same app, and under **Properties**, set **Assignment required?** to
+   **Yes**. Then under **Users and groups**, add exactly the people (or
+   groups) who should be allowed to sign in this way. This restricts who
+   can even reach this app at the identity-provider level, independent of
+   anything configured here.
+
+### Configuring it in this app
+
+In **🛡️ Admin → 🔑 Single sign-on**, enter the **Tenant ID**, **Client
+ID**, and **Client secret** from above, then check **Enable SSO login**
+and save. The "Sign in with Microsoft" button will now appear on the
+login page for everyone.
+
+### How accounts get created
+
+The first time someone signs in via SSO, an account is created for them
+automatically (matching their email as the username, non-admin by
+default) - there's no separate admin action needed to let a new person
+in. This is safe specifically because access is expected to already be
+restricted at the Entra level (step 6 above) - unlike a fully open door,
+whoever can complete this flow at all has already been vetted by your
+organization's own identity provider.
+
+Once created, a person's account stays linked to their specific Entra
+identity (not just their email, which can change) - if they show up
+again later, they get the same account back rather than a duplicate.
+
+### Two-factor authentication for SSO users
+
+SSO logins skip this app's own mandatory 2FA entirely - the whole point
+of real SSO is centralizing authentication policy (including MFA) at the
+identity provider, not enforcing it a second time here. Whatever MFA
+policy your organization already has configured in Entra applies as
+normal; this app doesn't ask for a second code on top of it.
+
+### If something goes wrong
+
+Uncheck **Enable SSO login** in the admin panel and save - this
+immediately removes the "Sign in with Microsoft" button and disables the
+login/callback routes, with zero effect on local accounts or anyone
+already using them. There's no scenario where an Entra-side problem locks
+someone out of local login.
+
 ## Backups
 
 **🛡️ Admin → 💾 Backups** creates a zip snapshot of everything in

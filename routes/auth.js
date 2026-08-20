@@ -24,8 +24,12 @@ const {
   generateRecoveryCodes,
   verifyRecoveryCode,
   getRecoveryCodesStatus,
+  findBySSOSubject,
+  createUserFromSSO,
   LOCKOUT_DURATION_MS,
 } = require('../lib/users');
+const { getConfig: getSSOConfig, getConfigStatus: getSSOConfigStatus } = require('../lib/ssoConfig');
+const { buildAuthorizationRedirect, handleCallback: handleSSOCallback } = require('../lib/sso');
 const { getSettings } = require('../lib/settings');
 const { generateSecret, verifyToken, generateQrCodeDataUrl } = require('../lib/totp');
 const { logLoginEvent } = require('../lib/auditLog');
@@ -398,6 +402,91 @@ router.post('/2fa/confirm', (req, res) => {
     });
   } else {
     res.json({ ok: true, recoveryCodes });
+  }
+});
+
+// Public - the login page needs to know whether to show the "Sign in
+// with Microsoft" button at all, before anyone has a session.
+router.get('/sso/status', (req, res) => {
+  const status = getSSOConfigStatus();
+  res.json({ enabled: status.configured && status.enabled });
+});
+
+router.get('/sso/login', async (req, res) => {
+  const config = getSSOConfig();
+  if (!config || !config.enabled) {
+    return res.redirect('/login.html?ssoError=' + encodeURIComponent('Single sign-on is not enabled.'));
+  }
+
+  try {
+    // Built from the actual incoming request rather than hardcoded, so
+    // this always matches whatever hostname was actually used to reach
+    // the app - which must be registered as the exact redirect URI in
+    // the Entra app registration.
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/sso/callback`;
+    const { url, state, nonce, codeVerifier } = await buildAuthorizationRedirect(config, redirectUri);
+
+    // Stashed in the session temporarily - retrieved and cleared on the
+    // way back through /sso/callback below. A session already exists at
+    // this point (express-session creates one on first touch) even
+    // though the person isn't authenticated yet.
+    req.session.ssoState = state;
+    req.session.ssoNonce = nonce;
+    req.session.ssoCodeVerifier = codeVerifier;
+
+    res.redirect(url);
+  } catch (err) {
+    console.error('Failed to start SSO login:', err);
+    res.redirect('/login.html?ssoError=' + encodeURIComponent('Failed to start sign-in. Please try again.'));
+  }
+});
+
+router.get('/sso/callback', async (req, res) => {
+  const config = getSSOConfig();
+  if (!config || !config.enabled) {
+    return res.redirect('/login.html?ssoError=' + encodeURIComponent('Single sign-on is not enabled.'));
+  }
+
+  const { ssoState, ssoNonce, ssoCodeVerifier } = req.session;
+  // Cleared immediately regardless of outcome - these are only ever
+  // valid for the one login attempt that generated them.
+  delete req.session.ssoState;
+  delete req.session.ssoNonce;
+  delete req.session.ssoCodeVerifier;
+
+  if (!ssoState || !ssoNonce || !ssoCodeVerifier) {
+    return res.redirect('/login.html?ssoError=' + encodeURIComponent('Sign-in session expired. Please try again.'));
+  }
+
+  try {
+    const currentUrl = new URL(`${req.protocol}://${req.get('host')}${req.originalUrl}`);
+    const claims = await handleSSOCallback(config, currentUrl, {
+      expectedState: ssoState,
+      expectedNonce: ssoNonce,
+      codeVerifier: ssoCodeVerifier,
+    });
+
+    let user = findBySSOSubject(claims.sub);
+    if (!user) {
+      user = createUserFromSSO({ subject: claims.sub, email: claims.email, name: claims.name });
+    }
+
+    // SSO logins skip this app's own mandatory 2FA entirely - real SSO
+    // means centralizing auth policy (including MFA) at the identity
+    // provider, not enforcing it a second time here. Fresh session ID
+    // before granting access - same fixation-defense principle used at
+    // every other privilege-transition point in this file.
+    req.session.regenerate((err) => {
+      if (err) return res.redirect('/login.html?ssoError=' + encodeURIComponent('Failed to create session.'));
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      logLoginEvent({ username: user.username, success: true, reason: 'Login successful (SSO)', ip: req.ip });
+      res.redirect('/');
+    });
+  } catch (err) {
+    console.error('SSO callback failed:', err.message);
+    logLoginEvent({ username: '(SSO)', success: false, reason: 'SSO login failed: ' + err.message, ip: req.ip });
+    res.redirect('/login.html?ssoError=' + encodeURIComponent('Sign-in failed. Please try again or contact an admin.'));
   }
 });
 
