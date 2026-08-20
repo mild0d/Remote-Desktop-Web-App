@@ -301,7 +301,12 @@
         </div>
         <div class="mb-3">
           <label class="form-label">Tags</label>
-          <input id="f-tags" class="form-control" placeholder="e.g. ATL, AD, Production" />
+          <div class="d-flex gap-2">
+            <input id="f-tags" class="form-control" placeholder="e.g. ATL, AD, Production" />
+            <select id="f-tags-existing" class="form-select" style="width: auto;" title="Add an existing tag">
+              <option value="" selected disabled>+ Existing tag</option>
+            </select>
+          </div>
           <div class="form-text">Comma-separated. Click any tag above the connections grid to filter by it.</div>
         </div>
         <div class="mb-3">
@@ -457,8 +462,8 @@
 <div class="app-overlay" id="share-modal-backdrop">
   <div class="card" style="width: 400px; max-width: 92vw;">
     <div class="card-body">
-      <h2 class="h5 card-title">Share connection</h2>
-      <p class="text-secondary small">
+      <h2 class="h5 card-title">Share connection<span id="share-modal-count-suffix"></span></h2>
+      <p class="text-secondary small" id="share-modal-description">
         Shares a copy into their own list - name, hostname, tags, and notes
         carry over, but never a password. They'll use their own
         credentials to connect (their own default credentials, or their
@@ -475,6 +480,26 @@
       <div class="app-panel-footer">
         <button type="button" class="btn btn-outline-light" id="share-cancel-btn">Cancel</button>
         <button type="button" class="btn btn-primary d-none" id="share-confirm-btn">Share</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="bulk-tag-modal-backdrop">
+  <div class="card" style="width: 420px; max-width: 92vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title">Add tags<span id="bulk-tag-count-suffix"></span></h2>
+      <p class="text-secondary small">Added to every selected connection - existing tags on each one are kept, not replaced.</p>
+      <div class="d-flex gap-2 mb-3">
+        <input id="bulk-tag-input" class="form-control" placeholder="e.g. ATL, AD, Production" />
+        <select id="bulk-tag-existing" class="form-select" style="width: auto;" title="Add an existing tag">
+          <option value="" selected disabled>+ Existing tag</option>
+        </select>
+      </div>
+      <div class="text-danger small mb-2" id="bulk-tag-error"></div>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light" id="bulk-tag-cancel-btn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="bulk-tag-confirm-btn">Add tags</button>
       </div>
     </div>
   </div>
@@ -824,18 +849,23 @@ let searchQuery = '';
 let selectedTag = null;
 let selectedConnectionIds = new Set();
 
-function renderTagChips() {
+function getAllDistinctTags() {
   const allTags = new Set();
   currentConns.forEach((c) => (c.tags || []).forEach((t) => allTags.add(t)));
+  return Array.from(allTags).sort();
+}
+
+function renderTagChips() {
+  const allTags = getAllDistinctTags();
 
   tagChipsEl.innerHTML = '';
-  if (allTags.size === 0) {
+  if (allTags.length === 0) {
     tagChipsEl.classList.add('d-none');
     return;
   }
   tagChipsEl.classList.remove('d-none');
 
-  Array.from(allTags).sort().forEach((tag) => {
+  allTags.forEach((tag) => {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'btn btn-sm ' + (tag === selectedTag ? 'btn-primary' : 'btn-outline-light');
@@ -1184,12 +1214,27 @@ function openModal(existing) {
   document.getElementById('f-color-depth').value = existing ? existing.color_depth || '16' : '16';
   document.getElementById('f-ignore-cert').checked = existing ? !!existing.ignore_cert : true;
   document.getElementById('f-tags').value = existing && Array.isArray(existing.tags) ? existing.tags.join(', ') : '';
+  const existingTagsSelect = document.getElementById('f-tags-existing');
+  existingTagsSelect.innerHTML = '<option value="" selected disabled>+ Existing tag</option>'
+    + getAllDistinctTags().map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
   document.getElementById('f-notes').value = existing ? existing.notes || '' : '';
   modalTitle.textContent = existing ? 'Edit connection' : 'Add connection';
   formError.textContent = '';
   modalBackdrop.classList.add('open');
 }
 function closeModal() { modalBackdrop.classList.remove('open'); }
+
+document.getElementById('f-tags-existing').addEventListener('change', (e) => {
+  const chosen = e.target.value;
+  e.target.value = ''; // reset back to the placeholder immediately after picking
+  if (!chosen) return;
+
+  const tagsInput = document.getElementById('f-tags');
+  const current = tagsInput.value.split(',').map((t) => t.trim()).filter(Boolean);
+  if (current.includes(chosen)) return; // already present, nothing to add
+  current.push(chosen);
+  tagsInput.value = current.join(', ');
+});
 
 document.getElementById('add-btn').addEventListener('click', () => openModal(null));
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
@@ -1366,11 +1411,42 @@ document.getElementById('bulk-delete-btn').addEventListener('click', async () =>
   loadConnections();
 });
 
-document.getElementById('bulk-tag-btn').addEventListener('click', async () => {
-  const input = prompt('Add tag(s) to the selected connections (comma-separated):');
-  if (input === null) return;
-  const tags = input.split(',').map((t) => t.trim()).filter(Boolean);
-  if (tags.length === 0) return;
+const bulkTagModalBackdrop = document.getElementById('bulk-tag-modal-backdrop');
+const bulkTagInput = document.getElementById('bulk-tag-input');
+const bulkTagError = document.getElementById('bulk-tag-error');
+
+document.getElementById('bulk-tag-btn').addEventListener('click', () => {
+  bulkTagInput.value = '';
+  bulkTagError.textContent = '';
+  document.getElementById('bulk-tag-count-suffix').textContent = ` (${selectedConnectionIds.size})`;
+
+  const existingTagsSelect = document.getElementById('bulk-tag-existing');
+  existingTagsSelect.innerHTML = '<option value="" selected disabled>+ Existing tag</option>'
+    + getAllDistinctTags().map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+
+  bulkTagModalBackdrop.classList.add('open');
+});
+
+document.getElementById('bulk-tag-existing').addEventListener('change', (e) => {
+  const chosen = e.target.value;
+  e.target.value = '';
+  if (!chosen) return;
+  const current = bulkTagInput.value.split(',').map((t) => t.trim()).filter(Boolean);
+  if (current.includes(chosen)) return;
+  current.push(chosen);
+  bulkTagInput.value = current.join(', ');
+});
+
+document.getElementById('bulk-tag-cancel-btn').addEventListener('click', () => {
+  bulkTagModalBackdrop.classList.remove('open');
+});
+
+document.getElementById('bulk-tag-confirm-btn').addEventListener('click', async () => {
+  const tags = bulkTagInput.value.split(',').map((t) => t.trim()).filter(Boolean);
+  if (tags.length === 0) {
+    bulkTagError.textContent = 'Enter at least one tag.';
+    return;
+  }
 
   const res = await fetch('/api/connections/bulk-tag', {
     method: 'POST',
@@ -1378,43 +1454,16 @@ document.getElementById('bulk-tag-btn').addEventListener('click', async () => {
     body: JSON.stringify({ ids: Array.from(selectedConnectionIds), tags }),
   });
   if (res.ok) {
+    bulkTagModalBackdrop.classList.remove('open');
     loadConnections();
   } else {
     const data = await res.json().catch(() => ({}));
-    alert(data.error || 'Failed to tag connections');
+    bulkTagError.textContent = data.error || 'Failed to tag connections';
   }
 });
 
-document.getElementById('bulk-share-btn').addEventListener('click', async () => {
-  const res = await fetch('/api/connections/share-targets');
-  const targets = res.ok ? await res.json() : [];
-  if (targets.length === 0) {
-    alert('No other users to share with yet.');
-    return;
-  }
-
-  const list = targets.map((u, i) => `${i + 1}. ${u.username}`).join('\n');
-  const choice = prompt(`Share ${selectedConnectionIds.size} connection(s) with which user?\n${list}\n\nEnter a number:`);
-  if (choice === null) return;
-  const target = targets[Number(choice) - 1];
-  if (!target) {
-    alert('Invalid selection.');
-    return;
-  }
-
-  const shareRes = await fetch('/api/connections/bulk-share', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids: Array.from(selectedConnectionIds), targetUserId: target.id }),
-  });
-  if (shareRes.ok) {
-    const data = await shareRes.json();
-    alert(`Shared ${data.shared} connection(s) with ${data.sharedWith}.`);
-  } else {
-    const data = await shareRes.json().catch(() => ({}));
-    alert(data.error || 'Failed to share connections');
-  }
-});
+// Bulk share is wired up above, alongside the single-connection share
+// modal it now reuses (see openShareModal).
 
 document.getElementById('card-dropdown-edit-btn').addEventListener('click', async () => {
   const id = cardDropdownConnectionId;
@@ -1430,12 +1479,24 @@ const shareTargetPicker = document.getElementById('share-target-picker');
 const shareTargetSelect = document.getElementById('share-target-select');
 const shareError = document.getElementById('share-error');
 const shareConfirmBtn = document.getElementById('share-confirm-btn');
-let shareConnectionId = null;
 
-document.getElementById('card-dropdown-share-btn').addEventListener('click', async () => {
-  shareConnectionId = cardDropdownConnectionId;
-  closeCardDropdown();
+let shareConnectionId = null;
+let shareBulkIds = null; // set instead of shareConnectionId when sharing multiple at once
+
+async function openShareModal({ singleId, bulkIds }) {
+  shareConnectionId = singleId || null;
+  shareBulkIds = bulkIds || null;
   shareError.textContent = '';
+
+  const countSuffix = document.getElementById('share-modal-count-suffix');
+  const description = document.getElementById('share-modal-description');
+  if (bulkIds) {
+    countSuffix.textContent = ` (${bulkIds.length})`;
+    description.textContent = `Shares a copy of each into the recipient's own list - name, hostname, tags, and notes carry over, but never a password. They'll use their own credentials to connect.`;
+  } else {
+    countSuffix.textContent = '';
+    description.textContent = `Shares a copy into their own list - name, hostname, tags, and notes carry over, but never a password. They'll use their own credentials to connect (their own default credentials, or their own per-connection override).`;
+  }
 
   const res = await fetch('/api/connections/share-targets');
   const targets = res.ok ? await res.json() : [];
@@ -1454,6 +1515,16 @@ document.getElementById('card-dropdown-share-btn').addEventListener('click', asy
   }
 
   shareModalBackdrop.classList.add('open');
+}
+
+document.getElementById('card-dropdown-share-btn').addEventListener('click', () => {
+  const id = cardDropdownConnectionId;
+  closeCardDropdown();
+  openShareModal({ singleId: id });
+});
+
+document.getElementById('bulk-share-btn').addEventListener('click', () => {
+  openShareModal({ bulkIds: Array.from(selectedConnectionIds) });
 });
 
 document.getElementById('share-cancel-btn').addEventListener('click', () => {
@@ -1462,19 +1533,34 @@ document.getElementById('share-cancel-btn').addEventListener('click', () => {
 
 shareConfirmBtn.addEventListener('click', async () => {
   shareError.textContent = '';
-  const res = await fetch(`/api/connections/${shareConnectionId}/share`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetUserId: Number(shareTargetSelect.value) }),
-  });
+  const targetUserId = Number(shareTargetSelect.value);
+
+  const res = shareBulkIds
+    ? await fetch('/api/connections/bulk-share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: shareBulkIds, targetUserId }),
+      })
+    : await fetch(`/api/connections/${shareConnectionId}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId }),
+      });
 
   if (res.ok) {
     const data = await res.json();
     shareModalBackdrop.classList.remove('open');
-    alert(`Shared with ${data.sharedWith}.`);
+    if (shareBulkIds) {
+      alert(`Shared ${data.shared} connection(s) with ${data.sharedWith}.`);
+      selectedConnectionIds.clear();
+      updateBulkActionBar();
+      loadConnections();
+    } else {
+      alert(`Shared with ${data.sharedWith}.`);
+    }
   } else {
     const data = await res.json().catch(() => ({}));
-    shareError.textContent = data.error || 'Failed to share connection';
+    shareError.textContent = data.error || 'Failed to share';
   }
 });
 

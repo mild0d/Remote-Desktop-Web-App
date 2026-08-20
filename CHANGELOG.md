@@ -7,6 +7,19 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.8.0] - 2026-08-20
+
+### Changed
+- Sharing multiple connections at once (via Select mode) now uses the
+  same proper username dropdown as sharing a single connection, instead
+  of a numbered text prompt asking you to type "1", "2", "3"...
+- Adding tags - both to a single connection and to several at once -
+  now has a small dropdown of tags already in use elsewhere, so you can
+  pick an existing one instead of retyping its exact spelling. Typing a
+  brand new tag still works exactly as before; the dropdown is purely an
+  added shortcut, not a restriction. Bulk-tagging also moved out of a
+  plain text prompt into a proper modal with the same dropdown.
+
 ## [1.7.1] - 2026-08-20
 
 ### Fixed
