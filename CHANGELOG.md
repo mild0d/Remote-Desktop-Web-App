@@ -7,6 +7,22 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.7.1] - 2026-08-20
+
+### Fixed
+- SSO accounts no longer see local credential controls that don't apply
+  to them: the username in the top bar is no longer a change-password
+  button (their internal password is a random placeholder they never
+  saw), and the 🔐 2FA button is hidden (app 2FA only ever applies at
+  local login, which SSO accounts never use - their MFA policy lives in
+  Entra). Both are also enforced server-side, not just hidden.
+- The admin panel no longer offers "Reset password" on SSO accounts,
+  and the backend rejects it outright - setting a local password on an
+  SSO account would quietly create a second way in that Entra doesn't
+  control, including for someone who's since been removed from Entra.
+  SSO accounts now show a small "SSO" badge in the user list so it's
+  clear at a glance why.
+
 ## [1.7.0] - 2026-08-20
 
 ### Added

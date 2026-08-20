@@ -279,7 +279,17 @@ router.post('/change-password', (req, res) => {
   }
 
   const user = findById(req.session.userId);
-  if (!user || !verifyPassword(user, currentPassword)) {
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  // SSO accounts authenticate through Microsoft - their internal password
+  // is a random placeholder they never saw, so there's no meaningful
+  // "current password" for them to change from. Enforced here rather
+  // than only hidden in the UI.
+  if (user.sso_subject) {
+    return res.status(400).json({ error: 'This account signs in with Microsoft - its password is managed there, not here' });
+  }
+  if (!verifyPassword(user, currentPassword)) {
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
 
@@ -298,6 +308,7 @@ router.get('/me', (req, res) => {
       is_admin: isAdmin(req.session.userId), // kept for any older code/UI still reading this directly
       role,
       permissions: PERMISSIONS[role] || PERMISSIONS.user,
+      isSSO: Boolean(user && user.sso_subject),
     });
   }
   res.json({ authenticated: false });

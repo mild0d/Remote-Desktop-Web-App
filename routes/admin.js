@@ -68,6 +68,13 @@ router.post('/users/:id/reset-password', requirePermission('resetPasswords'), (r
 
   const user = findById(userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  // Setting a local password on an SSO account would quietly create a
+  // second way into it that Entra doesn't control - including for
+  // someone who's since been removed from Entra. Their sign-in lives
+  // with Microsoft; password resets happen there.
+  if (user.sso_subject) {
+    return res.status(400).json({ error: 'This account signs in with Microsoft - reset its password in Entra, not here' });
+  }
 
   adminResetPassword(userId, newPassword);
   logAdminEvent({ adminUsername: req.session.username, action: 'Reset password', targetUsername: user.username });

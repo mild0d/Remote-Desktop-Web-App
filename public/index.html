@@ -2086,12 +2086,12 @@ async function loadAdminPanel() {
       : `<span class="${u.role === 'admin' ? 'text-success' : ''}">${ROLE_LABELS[u.role] || u.role}</span>`;
 
     tr.innerHTML = `
-      <td>${escapeHtml(u.username)}${isSelf ? ' <span class="text-secondary small">(you)</span>' : ''}${u.locked ? ` <span class="badge text-bg-danger">Locked (${u.lockoutMinutesRemaining}m)</span>` : ''}</td>
+      <td>${escapeHtml(u.username)}${isSelf ? ' <span class="text-secondary small">(you)</span>' : ''}${u.is_sso ? ' <span class="badge text-bg-secondary" title="Signs in with Microsoft - password and MFA are managed in Entra">SSO</span>' : ''}${u.locked ? ` <span class="badge text-bg-danger">Locked (${u.lockoutMinutesRemaining}m)</span>` : ''}</td>
       <td>${roleCell}</td>
       <td class="text-secondary small">${new Date(u.created_at).toLocaleDateString()}</td>
       <td class="text-end">
         <div class="d-flex flex-wrap gap-1 justify-content-end">
-          ${currentUserPermissions.resetPasswords ? `<button class="btn btn-outline-light btn-sm" data-reset-password="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button>` : ''}
+          ${currentUserPermissions.resetPasswords && !u.is_sso ? `<button class="btn btn-outline-light btn-sm" data-reset-password="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button>` : ''}
           ${currentUserPermissions.disable2FA && u.totp_enabled ? `<button class="btn btn-outline-light btn-sm" data-disable-2fa="${u.id}" data-username="${escapeHtml(u.username)}">Disable 2FA</button>` : ''}
           ${currentUserPermissions.unlockAccounts && u.locked ? `<button class="btn btn-outline-light btn-sm" data-unlock-account="${u.id}" data-username="${escapeHtml(u.username)}">Unlock</button>` : ''}
           ${currentUserPermissions.manageUsers ? `<button class="btn btn-outline-light btn-sm" data-delete-user="${u.id}" data-username="${escapeHtml(u.username)}" ${isSelf ? 'disabled' : ''}>Delete</button>` : ''}
@@ -2547,6 +2547,7 @@ adminUsersRows.addEventListener('click', async (e) => {
 let currentUserId = null;
 let currentUserRole = 'user';
 let currentUserPermissions = {};
+let currentUserIsSSO = false;
 
 async function checkAuth() {
   const res = await fetch('/api/auth/me');
@@ -2558,7 +2559,20 @@ async function checkAuth() {
   currentUserId = data.id;
   currentUserRole = data.role || 'user';
   currentUserPermissions = data.permissions || {};
-  document.getElementById('whoami').textContent = data.username;
+  currentUserIsSSO = Boolean(data.isSSO);
+  const whoamiEl = document.getElementById('whoami');
+  whoamiEl.textContent = data.username;
+  if (currentUserIsSSO) {
+    // SSO accounts have no local password to change - their sign-in is
+    // managed in Microsoft Entra, so the username shouldn't look or act
+    // like a change-password button for them.
+    whoamiEl.style.cursor = 'default';
+    whoamiEl.style.textDecoration = 'none';
+    whoamiEl.title = 'Signed in with Microsoft';
+    // Same reasoning for app 2FA - it only ever applies at local login,
+    // which SSO accounts never use. Their MFA policy lives in Entra.
+    document.getElementById('twofa-settings-btn').classList.add('d-none');
+  }
   // Helpdesk/auditor get into the admin panel too, in a reduced capacity -
   // not just full admins.
   if (currentUserRole !== 'user') {
@@ -2577,6 +2591,7 @@ const pwForm = document.getElementById('password-form');
 const pwFormError = document.getElementById('password-form-error');
 
 document.getElementById('whoami').addEventListener('click', () => {
+  if (currentUserIsSSO) return; // no local password to change - managed in Entra
   pwForm.reset();
   pwFormError.textContent = '';
   pwModalBackdrop.classList.add('open');

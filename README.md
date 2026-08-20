@@ -633,6 +633,19 @@ identity provider, not enforcing it a second time here. Whatever MFA
 policy your organization already has configured in Entra applies as
 normal; this app doesn't ask for a second code on top of it.
 
+### Passwords for SSO accounts
+
+SSO accounts have no usable local password - the one created internally
+at auto-provisioning is a random placeholder nobody ever saw. So the
+change-password and 2FA controls are hidden for them, and the admin
+panel won't offer "Reset password" on them either (they show a small
+"SSO" badge instead). All of this is enforced server-side too, not just
+hidden: giving an SSO account a working local password would quietly
+create a second way in that Entra doesn't control - including for
+someone who's since been removed from Entra. If someone needs their
+password or MFA reset, that happens in Entra, where their sign-in
+actually lives.
+
 ### If something goes wrong
 
 Uncheck **Enable SSO login** in the admin panel and save - this
