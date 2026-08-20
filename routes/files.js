@@ -41,7 +41,8 @@ const storage = multer.diskStorage({
     cb(null, base);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 1024 * 1024 * 1024 } }); // 1GB per file
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024; // 10GB - deployment images, WIM files, and installer packages routinely exceed the old 1GB limit
+const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_BYTES } });
 
 router.get('/', (req, res) => {
   const dir = ensureUserDriveDir(req.session.userId);
@@ -55,8 +56,23 @@ router.get('/', (req, res) => {
   res.json(entries);
 });
 
-router.post('/', upload.array('files'), (req, res) => {
-  res.status(201).json({ ok: true, uploaded: (req.files || []).map((f) => f.filename) });
+router.post('/', (req, res, next) => {
+  upload.array('files')(req, res, (err) => {
+    if (err) {
+      // Handled here specifically rather than letting these fall through
+      // to the app's generic catch-all error handler, which would
+      // otherwise report an unhelpful "Something went wrong" for what
+      // are actually clear, expected (if unwelcome) conditions.
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024 * 1024)}GB per-file limit.` });
+      }
+      if (err.code === 'ENOSPC') {
+        return res.status(507).json({ error: 'The server has run out of disk space. Free up some room and try again.' });
+      }
+      return next(err);
+    }
+    res.status(201).json({ ok: true, uploaded: (req.files || []).map((f) => f.filename) });
+  });
 });
 
 router.get('/:filename', (req, res) => {

@@ -681,6 +681,26 @@ account at all times.
 admin accounts stay admins, and everyone else stays a regular user,
 automatically. There's no separate migration step or file to edit.
 
+## Shared drive uploads
+
+Uploading a large file to the shared drive (📁 in a session) shows a
+progress bar with a running "X of Y uploaded" count, rather than leaving
+you guessing whether anything is happening.
+
+Large uploads that used to intermittently fail partway through - working
+sometimes, timing out other times, with no clear pattern - were hitting
+a genuine server-side limit: Node's default request timeout is 5
+minutes, which a large file can easily exceed on anything but a fast
+connection. That ceiling has been removed for this app specifically,
+since it's self-hosted for a known set of people rather than a public
+API that benefits from a strict timeout.
+
+The per-file limit is 10GB, raised from an original 1GB that turned out
+to be too small for real-world deployment images, WIM files, and
+installer packages. A file over that limit is rejected with a clear
+"File exceeds the 10GB per-file limit" message rather than a generic
+upload failure.
+
 ## Backups
 
 **🛡️ Admin → 💾 Backups** creates a zip snapshot of everything in

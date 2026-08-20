@@ -136,6 +136,14 @@ app.use((err, req, res, next) => {
 
 const { cert, key } = getOrCreateCertificate();
 const server = https.createServer({ cert, key }, app);
+// Node's default requestTimeout is 5 minutes - fine for ordinary API
+// calls, but far too short for a large file upload to the shared drive
+// (up to 1GB) on anything but a fast connection. This was the actual
+// cause of uploads that "sometimes" failed - not a UI issue, a real
+// server-side timeout aborting the request mid-upload. headersTimeout
+// is deliberately left at its default: headers are tiny and should
+// always arrive quickly no matter how large the body is.
+server.requestTimeout = 0; // disabled - this app is self-hosted for a known set of users, not a public API needing a strict ceiling here
 
 // guacd connection details (in Docker Compose this is the "guacd" service name)
 const guacdOptions = {

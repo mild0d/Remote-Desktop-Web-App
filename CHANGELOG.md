@@ -7,6 +7,40 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.9.1] - 2026-08-20
+
+### Fixed
+- Uploading a file over the per-file size limit showed a generic
+  "Something went wrong" instead of saying what actually happened - the
+  underlying error was reaching the app's catch-all error handler
+  instead of being recognized for what it was. Now returns a specific
+  "File exceeds the Xgb per-file limit" message. A separate, similar fix
+  now gives a clear "server has run out of disk space" message instead
+  of the same generic error, if the server's disk actually fills up
+  mid-upload.
+- Raised the per-file limit itself from 1GB to 10GB - OS deployment
+  images, WIM files, and installer packages routinely exceed the
+  original limit.
+
+## [1.9.0] - 2026-08-20
+
+### Added
+- A progress bar for uploads to the shared drive, showing a running "X
+  of Y uploaded" count instead of a blank wait with no feedback.
+
+### Fixed
+- Large shared-drive uploads that intermittently failed partway through
+  - working sometimes, timing out other times. The actual cause: Node's
+  default request timeout is 5 minutes, which a large file can easily
+  exceed on anything but a fast connection - not a UI issue, a real
+  server-side timeout aborting the request mid-upload. Removed for this
+  app specifically, since it's self-hosted for a known set of people
+  rather than a public API that benefits from a strict ceiling here.
+  The 1GB per-file limit is unchanged. Uploading uses XMLHttpRequest
+  instead of fetch() now too, since fetch has no upload-progress event
+  at all - needed for the progress bar above to show real progress
+  rather than a fake animation.
+
 ## [1.8.0] - 2026-08-20
 
 ### Changed

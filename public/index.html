@@ -771,6 +771,12 @@
       <div class="mb-3">
         <input type="file" id="file-upload-input" class="form-control" multiple />
       </div>
+      <div class="mb-3 d-none" id="upload-progress-wrap">
+        <div class="progress" style="height: 20px;">
+          <div class="progress-bar" id="upload-progress-bar" role="progressbar" style="width: 0%;">0%</div>
+        </div>
+        <div class="text-secondary small mt-1" id="upload-progress-status"></div>
+      </div>
       <div class="text-danger small mb-2" id="files-error"></div>
       <table class="table table-hover align-middle mb-0">
         <thead><tr><th>Name</th><th>Size</th><th></th></tr></thead>
@@ -2973,6 +2979,10 @@ document.getElementById('files-close-btn').addEventListener('click', () => {
   filesModalBackdrop.classList.remove('open');
 });
 
+const uploadProgressWrap = document.getElementById('upload-progress-wrap');
+const uploadProgressBar = document.getElementById('upload-progress-bar');
+const uploadProgressStatus = document.getElementById('upload-progress-status');
+
 fileUploadInput.addEventListener('change', async () => {
   const files = fileUploadInput.files;
   if (!files || !files.length) return;
@@ -2980,15 +2990,60 @@ fileUploadInput.addEventListener('change', async () => {
 
   const formData = new FormData();
   for (const file of files) formData.append('files', file);
+  const totalBytes = Array.from(files).reduce((sum, f) => sum + f.size, 0);
 
-  const res = await fetch('/api/files', { method: 'POST', body: formData });
-  fileUploadInput.value = '';
-  if (res.ok) {
-    loadFiles();
-  } else {
-    const data = await res.json().catch(() => ({}));
-    filesError.textContent = data.error || 'Upload failed';
+  // fetch() has no upload-progress event at all - only XHR exposes real,
+  // byte-level progress via xhr.upload.onprogress. Since this bypasses
+  // the window.fetch override above, the CSRF token is fetched directly
+  // here instead.
+  let csrfToken = '';
+  try {
+    const tokenRes = await originalFetch('/api/auth/csrf-token');
+    if (tokenRes.ok) csrfToken = (await tokenRes.json()).csrfToken;
+  } catch (err) {
+    console.warn('Failed to fetch CSRF token', err);
   }
+
+  uploadProgressWrap.classList.remove('d-none');
+  uploadProgressBar.style.width = '0%';
+  uploadProgressBar.textContent = '0%';
+  uploadProgressStatus.textContent = `Uploading 0 B of ${formatFileSize(totalBytes)}...`;
+
+  await new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/files');
+    xhr.setRequestHeader('x-csrf-token', csrfToken);
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (!e.lengthComputable) return;
+      const percent = Math.round((e.loaded / e.total) * 100);
+      uploadProgressBar.style.width = `${percent}%`;
+      uploadProgressBar.textContent = `${percent}%`;
+      uploadProgressStatus.textContent = `Uploading ${formatFileSize(e.loaded)} of ${formatFileSize(e.total)}...`;
+    });
+
+    xhr.addEventListener('load', () => {
+      uploadProgressWrap.classList.add('d-none');
+      fileUploadInput.value = '';
+      if (xhr.status >= 200 && xhr.status < 300) {
+        loadFiles();
+      } else {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (err) { /* non-JSON error response */ }
+        filesError.textContent = data.error || 'Upload failed';
+      }
+      resolve();
+    });
+
+    xhr.addEventListener('error', () => {
+      uploadProgressWrap.classList.add('d-none');
+      fileUploadInput.value = '';
+      filesError.textContent = 'Upload failed - connection lost partway through.';
+      resolve();
+    });
+
+    xhr.send(formData);
+  });
 });
 
 filesRowsEl.addEventListener('click', async (e) => {
