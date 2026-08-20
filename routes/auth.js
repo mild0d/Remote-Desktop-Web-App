@@ -10,6 +10,7 @@ const {
   setDefaultCredentials,
   getDefaultCredentialsStatus,
   isAdmin,
+  getUserRole,
   isTotpEnabled,
   getTotpStatus,
   setPendingTotpSecret,
@@ -31,6 +32,7 @@ const {
 const { getConfig: getSSOConfig, getConfigStatus: getSSOConfigStatus } = require('../lib/ssoConfig');
 const { buildAuthorizationRedirect, handleCallback: handleSSOCallback } = require('../lib/sso');
 const { getSettings } = require('../lib/settings');
+const { PERMISSIONS } = require('../lib/roles');
 const { generateSecret, verifyToken, generateQrCodeDataUrl } = require('../lib/totp');
 const { logLoginEvent } = require('../lib/auditLog');
 const { generateCsrfToken } = require('../lib/csrf');
@@ -287,11 +289,15 @@ router.post('/change-password', (req, res) => {
 
 router.get('/me', (req, res) => {
   if (req.session && req.session.userId) {
+    const user = findById(req.session.userId);
+    const role = user ? getUserRole(user) : 'user';
     return res.json({
       authenticated: true,
       id: req.session.userId,
       username: req.session.username,
-      is_admin: isAdmin(req.session.userId),
+      is_admin: isAdmin(req.session.userId), // kept for any older code/UI still reading this directly
+      role,
+      permissions: PERMISSIONS[role] || PERMISSIONS.user,
     });
   }
   res.json({ authenticated: false });

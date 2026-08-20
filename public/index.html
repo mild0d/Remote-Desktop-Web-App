@@ -2051,6 +2051,15 @@ const adminRegistrationToggle = document.getElementById('admin-registration-togg
 async function loadAdminPanel() {
   adminError.textContent = '';
 
+  // Hide/disable whatever this specific role isn't allowed to touch,
+  // rather than showing controls that would just 403 if used.
+  document.getElementById('admin-audit-log-btn').classList.toggle('d-none', !currentUserPermissions.viewAuditLog);
+  document.getElementById('admin-active-sessions-btn').classList.toggle('d-none', !currentUserPermissions.viewActiveSessions);
+  document.getElementById('admin-ad-config-btn').classList.toggle('d-none', !currentUserPermissions.manageAD);
+  document.getElementById('admin-sso-config-btn').classList.toggle('d-none', !currentUserPermissions.manageSSO);
+  document.getElementById('admin-backups-btn').classList.toggle('d-none', !currentUserPermissions.manageBackups);
+  adminRegistrationToggle.disabled = !currentUserPermissions.toggleRegistration;
+
   const settingsRes = await fetch('/api/admin/settings');
   if (settingsRes.ok) {
     const settings = await settingsRes.json();
@@ -2064,21 +2073,28 @@ async function loadAdminPanel() {
   }
   const users = await usersRes.json();
 
+  const ROLE_LABELS = { admin: 'Admin', helpdesk: 'Helpdesk', auditor: 'Auditor', user: 'User' };
+
   adminUsersRows.innerHTML = '';
   users.forEach((u) => {
     const isSelf = u.id === currentUserId;
     const tr = document.createElement('tr');
+    const roleCell = currentUserPermissions.manageUsers
+      ? `<select class="form-select form-select-sm" style="width: auto;" data-role-select="${u.id}" ${isSelf ? 'disabled title="Use another admin account to change your own role"' : ''}>
+          ${['admin', 'helpdesk', 'auditor', 'user'].map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`).join('')}
+        </select>`
+      : `<span class="${u.role === 'admin' ? 'text-success' : ''}">${ROLE_LABELS[u.role] || u.role}</span>`;
+
     tr.innerHTML = `
       <td>${escapeHtml(u.username)}${isSelf ? ' <span class="text-secondary small">(you)</span>' : ''}${u.locked ? ` <span class="badge text-bg-danger">Locked (${u.lockoutMinutesRemaining}m)</span>` : ''}</td>
-      <td>${u.is_admin ? '<span class="text-success">Admin</span>' : 'User'}</td>
+      <td>${roleCell}</td>
       <td class="text-secondary small">${new Date(u.created_at).toLocaleDateString()}</td>
       <td class="text-end">
         <div class="d-flex flex-wrap gap-1 justify-content-end">
-          <button class="btn btn-outline-light btn-sm" data-toggle-admin="${u.id}">${u.is_admin ? 'Remove admin' : 'Make admin'}</button>
-          <button class="btn btn-outline-light btn-sm" data-reset-password="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button>
-          ${u.totp_enabled ? `<button class="btn btn-outline-light btn-sm" data-disable-2fa="${u.id}" data-username="${escapeHtml(u.username)}">Disable 2FA</button>` : ''}
-          ${u.locked ? `<button class="btn btn-outline-light btn-sm" data-unlock-account="${u.id}" data-username="${escapeHtml(u.username)}">Unlock</button>` : ''}
-          <button class="btn btn-outline-light btn-sm" data-delete-user="${u.id}" data-username="${escapeHtml(u.username)}" ${isSelf ? 'disabled' : ''}>Delete</button>
+          ${currentUserPermissions.resetPasswords ? `<button class="btn btn-outline-light btn-sm" data-reset-password="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button>` : ''}
+          ${currentUserPermissions.disable2FA && u.totp_enabled ? `<button class="btn btn-outline-light btn-sm" data-disable-2fa="${u.id}" data-username="${escapeHtml(u.username)}">Disable 2FA</button>` : ''}
+          ${currentUserPermissions.unlockAccounts && u.locked ? `<button class="btn btn-outline-light btn-sm" data-unlock-account="${u.id}" data-username="${escapeHtml(u.username)}">Unlock</button>` : ''}
+          ${currentUserPermissions.manageUsers ? `<button class="btn btn-outline-light btn-sm" data-delete-user="${u.id}" data-username="${escapeHtml(u.username)}" ${isSelf ? 'disabled' : ''}>Delete</button>` : ''}
         </div>
       </td>`;
     adminUsersRows.appendChild(tr);
@@ -2447,24 +2463,33 @@ adminRegistrationToggle.addEventListener('change', async () => {
   }
 });
 
+adminUsersRows.addEventListener('change', async (e) => {
+  const roleUserId = e.target.getAttribute('data-role-select');
+  if (!roleUserId) return;
+
+  adminError.textContent = '';
+  const newRole = e.target.value;
+  const res = await fetch(`/api/admin/users/${roleUserId}/role`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: newRole }),
+  });
+  if (res.ok) {
+    loadAdminPanel();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    adminError.textContent = data.error || 'Failed to update role';
+    loadAdminPanel(); // revert the dropdown to the actual current role
+  }
+});
+
 adminUsersRows.addEventListener('click', async (e) => {
-  const toggleId = e.target.getAttribute('data-toggle-admin');
   const resetId = e.target.getAttribute('data-reset-password');
   const disable2faId = e.target.getAttribute('data-disable-2fa');
   const unlockId = e.target.getAttribute('data-unlock-account');
   const deleteId = e.target.getAttribute('data-delete-user');
 
   adminError.textContent = '';
-
-  if (toggleId) {
-    const res = await fetch(`/api/admin/users/${toggleId}/toggle-admin`, { method: 'POST' });
-    if (res.ok) {
-      loadAdminPanel();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      adminError.textContent = data.error || 'Failed to update admin status';
-    }
-  }
 
   if (unlockId) {
     const username = e.target.getAttribute('data-username');
@@ -2520,6 +2545,8 @@ adminUsersRows.addEventListener('click', async (e) => {
 });
 
 let currentUserId = null;
+let currentUserRole = 'user';
+let currentUserPermissions = {};
 
 async function checkAuth() {
   const res = await fetch('/api/auth/me');
@@ -2529,8 +2556,12 @@ async function checkAuth() {
     return;
   }
   currentUserId = data.id;
+  currentUserRole = data.role || 'user';
+  currentUserPermissions = data.permissions || {};
   document.getElementById('whoami').textContent = data.username;
-  if (data.is_admin) {
+  // Helpdesk/auditor get into the admin panel too, in a reduced capacity -
+  // not just full admins.
+  if (currentUserRole !== 'user') {
     document.getElementById('admin-btn').classList.remove('d-none');
   }
 }

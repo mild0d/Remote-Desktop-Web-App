@@ -7,6 +7,24 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.7.0] - 2026-08-20
+
+### Added
+- **Role-based access control** - four roles (Admin, Helpdesk, Auditor,
+  User) replacing the old strict admin-or-not binary. Helpdesk can reset
+  passwords, unlock accounts, and manage active sessions without also
+  getting account deletion, role changes, 2FA resets, or AD/SSO/backup
+  configuration access. Auditor can view the audit log and active
+  sessions without being able to change anything. The admin panel only
+  shows the specific actions a given role can actually perform. The
+  last remaining admin still can't be changed to any other role or
+  deleted, the same protection that existed before for the old
+  admin/not-admin toggle.
+- Existing installations upgrade automatically with no migration step -
+  accounts that predate this feature (which only ever had the old
+  is_admin flag, no role field) are correctly read as Admin or User
+  based on that flag, exactly as before.
+
 ## [1.6.2] - 2026-08-20
 
 ### Fixed

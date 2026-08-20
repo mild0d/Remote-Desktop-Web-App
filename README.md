@@ -641,6 +641,33 @@ login/callback routes, with zero effect on local accounts or anyone
 already using them. There's no scenario where an Entra-side problem locks
 someone out of local login.
 
+## Roles and permissions
+
+Beyond the basic "admin or not," there are four roles:
+
+- **Admin** - everything, unchanged from before this feature existed
+- **Helpdesk** - can reset passwords, unlock locked-out accounts, view
+  and force-disconnect active sessions - the routine, frequently-needed
+  tasks - but cannot delete accounts, change anyone's role, disable
+  someone's 2FA, or touch AD/SSO/backup configuration
+- **Auditor** - can view the audit log and active sessions, but cannot
+  change anything at all
+- **User** - the default; no admin panel access
+
+Change someone's role from the dropdown next to their name in **🛡️
+Admin**. The admin panel itself only shows the specific buttons a given
+role can actually use - a Helpdesk account won't see a "Delete" button
+it would just get rejected for clicking, for example.
+
+The last remaining admin can't be changed to any other role (including
+Helpdesk) or deleted, the same protection that already existed for the
+old admin/not-admin toggle - there has to be at least one full admin
+account at all times.
+
+**Upgrading from before this feature existed:** nothing to do - existing
+admin accounts stay admins, and everyone else stays a regular user,
+automatically. There's no separate migration step or file to edit.
+
 ## Backups
 
 **🛡️ Admin → 💾 Backups** creates a zip snapshot of everything in
