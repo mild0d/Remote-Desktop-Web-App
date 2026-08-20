@@ -7,6 +7,18 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.5.1] - 2026-08-20
+
+### Fixed
+- The admin panel's user table required horizontal scrolling to see all
+  the action buttons - a side effect of SSO accounts naturally using
+  full email addresses as usernames (significantly longer than typical
+  short usernames), combined with Bootstrap's button group component,
+  which deliberately never wraps onto a new line by design. Switched to
+  a wrapping button layout and widened the panel slightly, so this can no
+  longer happen regardless of username length or how many action buttons
+  a given row has.
+
 ## [1.5.0] - 2026-08-20
 
 ### Added

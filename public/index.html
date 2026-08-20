@@ -489,7 +489,7 @@
 </div>
 
 <div class="app-overlay" id="admin-modal-backdrop">
-  <div class="card" style="width: 640px; max-width: 92vw;">
+  <div class="card" style="width: 760px; max-width: 92vw;">
     <div class="card-body">
       <h2 class="h5 card-title">Admin panel</h2>
 
@@ -1984,12 +1984,12 @@ async function loadAdminPanel() {
       <td>${u.is_admin ? '<span class="text-success">Admin</span>' : 'User'}</td>
       <td class="text-secondary small">${new Date(u.created_at).toLocaleDateString()}</td>
       <td class="text-end">
-        <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-light" data-toggle-admin="${u.id}">${u.is_admin ? 'Remove admin' : 'Make admin'}</button>
-          <button class="btn btn-outline-light" data-reset-password="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button>
-          ${u.totp_enabled ? `<button class="btn btn-outline-light" data-disable-2fa="${u.id}" data-username="${escapeHtml(u.username)}">Disable 2FA</button>` : ''}
-          ${u.locked ? `<button class="btn btn-outline-light" data-unlock-account="${u.id}" data-username="${escapeHtml(u.username)}">Unlock</button>` : ''}
-          <button class="btn btn-outline-light" data-delete-user="${u.id}" data-username="${escapeHtml(u.username)}" ${isSelf ? 'disabled' : ''}>Delete</button>
+        <div class="d-flex flex-wrap gap-1 justify-content-end">
+          <button class="btn btn-outline-light btn-sm" data-toggle-admin="${u.id}">${u.is_admin ? 'Remove admin' : 'Make admin'}</button>
+          <button class="btn btn-outline-light btn-sm" data-reset-password="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button>
+          ${u.totp_enabled ? `<button class="btn btn-outline-light btn-sm" data-disable-2fa="${u.id}" data-username="${escapeHtml(u.username)}">Disable 2FA</button>` : ''}
+          ${u.locked ? `<button class="btn btn-outline-light btn-sm" data-unlock-account="${u.id}" data-username="${escapeHtml(u.username)}">Unlock</button>` : ''}
+          <button class="btn btn-outline-light btn-sm" data-delete-user="${u.id}" data-username="${escapeHtml(u.username)}" ${isSelf ? 'disabled' : ''}>Delete</button>
         </div>
       </td>`;
     adminUsersRows.appendChild(tr);
