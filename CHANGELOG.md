@@ -7,6 +7,19 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.9.2] - 2026-08-20
+
+### Fixed
+- The 🛡️ Admin → 🖥️ Active sessions table required horizontal scrolling
+  to reach the "Force disconnect" button - the same class of problem
+  fixed for the admin user table back in 1.5.1, this time in a
+  different table: long SSO email usernames and long FQDN hostnames
+  pushed a plain table wider than its modal, with nothing to stop it.
+  Switched to a fixed-width table layout with ellipsis truncation (full
+  value still available by hovering) on the two columns most likely to
+  contain long values, so this can't happen again regardless of how
+  long any future username or hostname is.
+
 ## [1.9.1] - 2026-08-20
 
 ### Fixed

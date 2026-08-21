@@ -717,7 +717,7 @@
 </div>
 
 <div class="app-overlay" id="active-sessions-modal-backdrop">
-  <div class="card" style="width: 700px; max-width: 94vw;">
+  <div class="card" style="width: 900px; max-width: 96vw;">
     <div class="card-body">
       <h2 class="h5 card-title">Active sessions</h2>
       <p class="text-secondary small">
@@ -725,8 +725,14 @@
       </p>
       <div class="text-danger small mb-2" id="active-sessions-error"></div>
       <div style="max-height: 60vh; overflow-y: auto;">
-        <table class="table table-hover align-middle mb-0">
-          <thead><tr><th>User</th><th>Connection</th><th>Host</th><th>Started</th><th></th></tr></thead>
+        <table class="table table-hover align-middle mb-0" style="table-layout: fixed; width: 100%;">
+          <thead><tr>
+            <th style="width: 26%;">User</th>
+            <th style="width: 16%;">Connection</th>
+            <th style="width: 26%;">Host</th>
+            <th style="width: 12%;">Started</th>
+            <th style="width: 20%;"></th>
+          </tr></thead>
           <tbody id="active-sessions-rows"></tbody>
         </table>
       </div>
@@ -2230,9 +2236,9 @@ async function loadActiveSessions() {
   sessions.forEach((s) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escapeHtml(s.username || '')}</td>
-      <td>${escapeHtml(s.connection_name || '')}</td>
-      <td class="text-secondary small">${escapeHtml(s.hostname || '')}</td>
+      <td class="text-truncate" title="${escapeHtml(s.username || '')}">${escapeHtml(s.username || '')}</td>
+      <td class="text-truncate" title="${escapeHtml(s.connection_name || '')}">${escapeHtml(s.connection_name || '')}</td>
+      <td class="text-secondary small text-truncate" title="${escapeHtml(s.hostname || '')}">${escapeHtml(s.hostname || '')}</td>
       <td class="text-secondary small">${formatDuration(s.started_at)}</td>
       <td class="text-end">
         <button class="btn btn-danger btn-sm" data-force-disconnect="${s.session_id}">Force disconnect</button>
