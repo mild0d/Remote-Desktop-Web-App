@@ -7,6 +7,31 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.11.1] - 2026-08-20
+
+### Fixed
+- Buttons were nearly invisible on the Light, Windows 11, and Windows 10
+  themes - Connect, Sort, Select, tag filter chips, kebab menus, and
+  most footer buttons, all using the same button style throughout the
+  app. Cause: that style was designed for the original dark theme, where
+  light-colored text and borders read clearly - on a light background,
+  it's light-on-light. Windows XP was accidentally unaffected, since it
+  already gives every button a distinct visible background. Fixed for
+  all three affected themes.
+
+## [1.11.0] - 2026-08-20
+
+### Added
+- Themes: Dark (unchanged, the original default), Light, Windows 11,
+  Windows 10, and Windows XP. Selectable from a new dropdown in ⚙️
+  Settings → Appearance, applies immediately, and is saved per account -
+  follows you to any device you sign in from. The three Windows-styled
+  themes aim for genuine period character (Windows 11's rounded corners
+  and Mica-like surfaces, Windows 10's flatter and sharper chrome, XP's
+  iconic Luna blue title-bar gradient and beveled buttons) rather than
+  just three recolors of the same look. Existing accounts default to
+  Dark and see no change until someone actively picks something else.
+
 ## [1.10.0] - 2026-08-20
 
 ### Added

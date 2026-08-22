@@ -1,6 +1,23 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
+<script>
+  // Applied synchronously, before any paint, using whatever was last saved
+  // locally - avoids a flash of the default theme while the page waits on
+  // the server's /me response to confirm the account's actual saved
+  // preference (reconciled once that arrives, in case it changed on
+  // another device).
+  (function () {
+    try {
+      var saved = localStorage.getItem('theme') || 'dark';
+      var validThemes = ['dark', 'light', 'win11', 'win10', 'winxp'];
+      if (validThemes.indexOf(saved) === -1) saved = 'dark';
+      var bsBase = saved === 'dark' ? 'dark' : 'light'; // Windows-style themes are built on a light Bootstrap base with overrides layered on top
+      document.documentElement.setAttribute('data-bs-theme', bsBase);
+      document.documentElement.setAttribute('data-theme', saved);
+    } catch (err) { /* private browsing, storage disabled, etc. - falls back to the default dark theme already set above */ }
+  })();
+</script>
 <meta charset="UTF-8" />
 <title>RDP Web App</title>
 <link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css" />
@@ -148,6 +165,123 @@
   }
   .card-dropdown-style button:hover { background: var(--bs-tertiary-bg); }
   .card-dropdown-style button.text-danger:hover { background: var(--bs-danger); color: white; }
+
+  /* ============================================================
+     Themes. Dark (the original default) and Light both use Bootstrap's
+     own native light/dark support directly - no overrides needed there.
+     The three Windows-style themes are built on Bootstrap's light theme
+     as a base, then override Bootstrap's own CSS variables, which
+     almost every component (buttons, cards, forms, tables, badges)
+     already reads from - meaning these overrides reshape the whole app's
+     look without needing to rewrite each component's CSS individually.
+     A few extra hand-crafted touches (card title bars, button styling)
+     are layered on top of that for actual character, since color swaps
+     alone wouldn't read as authentically "Windows 11" vs "Windows 10"
+     vs "XP" - those three eras are defined as much by corner radius and
+     chrome details as by color. ============================================================ */
+
+  /* --- Light: Bootstrap's native light theme needs one correction of
+     its own - .btn-outline-light is used 54 times throughout this app
+     (Connect buttons, Sort, Select, kebab menus, tag filter chips,
+     footer buttons) and was designed for the original dark theme, where
+     a light-colored border/text reads clearly. On any light background
+     it's nearly invisible - light-on-light. Same fix applies to Windows
+     10 and 11 below, which are also light-based; Windows XP already
+     overrides every .btn broadly with a visible background, so it never
+     had this problem. --- */
+  [data-theme="light"] .btn-outline-light,
+  [data-theme="win11"] .btn-outline-light,
+  [data-theme="win10"] .btn-outline-light {
+    color: var(--bs-body-color); border-color: var(--bs-border-color); background-color: transparent;
+  }
+  [data-theme="light"] .btn-outline-light:hover,
+  [data-theme="win11"] .btn-outline-light:hover,
+  [data-theme="win10"] .btn-outline-light:hover {
+    color: #fff; background-color: #6c757d; border-color: #6c757d;
+  }
+
+  /* --- Windows 11: Fluent/Mica design language, 2021+ --- */
+  [data-theme="win11"] {
+    --bs-primary: #0078d4; --bs-primary-rgb: 0, 120, 212;
+    --bs-body-bg: #f3f3f3; --bs-body-color: #1b1b1b;
+    --bs-tertiary-bg: #fbfbfb; --bs-secondary-bg: #f3f3f3;
+    --bs-border-color: #e1e1e1;
+    --bs-border-radius: 8px; --bs-border-radius-sm: 6px; --bs-border-radius-lg: 12px;
+    --bs-link-color: #0078d4;
+    font-family: "Segoe UI Variable Display", "Segoe UI", Tahoma, sans-serif;
+  }
+  [data-theme="win11"] .card {
+    border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14); border-color: #e1e1e1;
+  }
+  [data-theme="win11"] .app-overlay .card-title {
+    margin: -1rem -1rem 1rem; padding: 14px 16px; font-size: 15px; font-weight: 600;
+    border-bottom: 1px solid #e1e1e1; border-radius: 12px 12px 0 0;
+  }
+  [data-theme="win11"] .btn { border-radius: 6px; }
+  [data-theme="win11"] .btn-primary { background: #0078d4; border-color: #0078d4; }
+  [data-theme="win11"] .btn-primary:hover { background: #006cbe; border-color: #006cbe; }
+  [data-theme="win11"] .form-control, [data-theme="win11"] .form-select { border-radius: 6px; }
+  [data-theme="win11"] #tab-bar { background: #f3f3f3; }
+  [data-theme="win11"] .tab-btn.active-tab { border-radius: 8px 8px 0 0; }
+
+  /* --- Windows 10: flatter Fluent Design, 2015+ - the defining visual
+     difference from 11 is sharp, square corners almost everywhere --- */
+  [data-theme="win10"] {
+    --bs-primary: #0078d4; --bs-primary-rgb: 0, 120, 212;
+    --bs-body-bg: #e6e6e6; --bs-body-color: #000000;
+    --bs-tertiary-bg: #ffffff; --bs-secondary-bg: #f2f2f2;
+    --bs-border-color: #c8c8c8;
+    --bs-border-radius: 0; --bs-border-radius-sm: 0; --bs-border-radius-lg: 0;
+    --bs-link-color: #0078d4;
+    font-family: "Segoe UI", Tahoma, sans-serif;
+  }
+  [data-theme="win10"] .card { border-radius: 0; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22); border-color: #c8c8c8; }
+  [data-theme="win10"] .app-overlay .card-title {
+    margin: -1rem -1rem 1rem; padding: 10px 16px; font-size: 14px; font-weight: 600;
+    background: #0078d4; color: #fff; border-radius: 0;
+  }
+  [data-theme="win10"] .btn { border-radius: 0; }
+  [data-theme="win10"] .btn-primary { background: #0078d4; border-color: #0078d4; }
+  [data-theme="win10"] .btn-primary:hover { background: #106ebe; border-color: #106ebe; }
+  [data-theme="win10"] .form-control, [data-theme="win10"] .form-select { border-radius: 0; }
+  [data-theme="win10"] #tab-bar { background: #f2f2f2; }
+
+  /* --- Windows XP: the Luna Blue theme, 2001 - by far the most visually
+     distinct of the three, defined by its blue title-bar gradient,
+     beveled buttons, and Tahoma throughout --- */
+  [data-theme="winxp"] {
+    --bs-primary: #0054e3; --bs-primary-rgb: 0, 84, 227;
+    --bs-body-bg: #ece9d8; --bs-body-color: #000000;
+    --bs-tertiary-bg: #ffffff; --bs-secondary-bg: #ece9d8;
+    --bs-border-color: #0054e3;
+    --bs-border-radius: 6px; --bs-border-radius-sm: 4px; --bs-border-radius-lg: 8px;
+    --bs-link-color: #0054e3;
+    font-family: Tahoma, "MS Sans Serif", sans-serif;
+  }
+  [data-theme="winxp"] .card { border-radius: 8px; border: 1px solid #0054e3; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden; }
+  [data-theme="winxp"] .app-overlay .card-title {
+    margin: -1rem -1rem 1rem; padding: 6px 10px; font-size: 13px; font-weight: 700; color: #fff;
+    background: linear-gradient(180deg, #0058d8 0%, #3993ff 45%, #1862d8 55%, #0058d8 100%);
+    border-radius: 7px 7px 0 0; text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.4);
+  }
+  [data-theme="winxp"] .btn {
+    border-radius: 4px; border: 1px solid #003c9d;
+    background: linear-gradient(180deg, #fff 0%, #ece9d8 100%);
+    color: #000;
+  }
+  [data-theme="winxp"] .btn:hover { background: linear-gradient(180deg, #fff 0%, #d8f0ff 100%); }
+  [data-theme="winxp"] .btn-primary {
+    background: linear-gradient(180deg, #6fa8ff 0%, #0054e3 55%, #0044b8 100%);
+    border-color: #003c9d; color: #fff;
+  }
+  [data-theme="winxp"] .btn-primary:hover { background: linear-gradient(180deg, #86b8ff 0%, #1a66ee 55%, #0044b8 100%); }
+  [data-theme="winxp"] .btn-danger {
+    background: linear-gradient(180deg, #ff9a8a 0%, #d83e2f 55%, #b8281a 100%); border-color: #8f2015;
+  }
+  [data-theme="winxp"] .form-control, [data-theme="winxp"] .form-select { border-radius: 3px; border-color: #7f9db9; }
+  [data-theme="winxp"] #tab-bar { background: linear-gradient(180deg, #0058d8 0%, #3993ff 100%); }
+  [data-theme="winxp"] .tab-btn { color: #fff; }
+  [data-theme="winxp"] .tab-btn.active-tab { background: #ece9d8; color: #000; box-shadow: none; }
 </style>
 </head>
 <body>
@@ -402,7 +536,24 @@
 <div class="app-overlay" id="settings-modal-backdrop">
   <div class="card" style="width: 420px; max-width: 90vw;">
     <div class="card-body">
-      <h2 class="h5 card-title">Default RDP credentials</h2>
+      <h2 class="h5 card-title">Settings</h2>
+
+      <h3 class="h6 text-secondary text-uppercase mt-2 mb-3" style="font-size: 12px; letter-spacing: 0.04em;">Appearance</h3>
+      <div class="mb-4">
+        <label class="form-label">Theme</label>
+        <select id="theme-select" class="form-select">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="win11">Windows 11</option>
+          <option value="win10">Windows 10</option>
+          <option value="winxp">Windows XP</option>
+        </select>
+        <div class="form-text">Applies immediately, and is remembered for your account on any device.</div>
+      </div>
+
+      <hr class="mb-4" />
+
+      <h3 class="h6 text-secondary text-uppercase mb-3" style="font-size: 12px; letter-spacing: 0.04em;">Default RDP credentials</h3>
       <p class="text-secondary small">
         Saved here once, these are used automatically for any connection whose
         own username/password fields are left blank - so you don't have to
@@ -2710,6 +2861,16 @@ let currentUserRole = 'user';
 let currentUserPermissions = {};
 let currentUserIsSSO = false;
 
+// Applies a theme immediately and caches it locally so the anti-flash
+// inline script at the top of the page can use it on the very next load,
+// before any server round-trip completes.
+function applyTheme(theme) {
+  const bsBase = theme === 'dark' ? 'dark' : 'light'; // Windows-style themes are built on a light Bootstrap base with overrides layered on top
+  document.documentElement.setAttribute('data-bs-theme', bsBase);
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('theme', theme); } catch (err) { /* private browsing, storage disabled, etc. */ }
+}
+
 async function checkAuth() {
   const res = await fetch('/api/auth/me');
   const data = await res.json();
@@ -2721,6 +2882,11 @@ async function checkAuth() {
   currentUserRole = data.role || 'user';
   currentUserPermissions = data.permissions || {};
   currentUserIsSSO = Boolean(data.isSSO);
+  // Reconciles with the account's actual saved theme, in case it differs
+  // from what the anti-flash script applied from the local cache (e.g.
+  // changed on another device) - applyTheme re-caches it locally too, so
+  // this device's local cache catches up for next time.
+  if (data.theme) applyTheme(data.theme);
   const whoamiEl = document.getElementById('whoami');
   whoamiEl.textContent = data.username;
   if (currentUserIsSSO) {
@@ -2816,6 +2982,7 @@ async function loadUserDefaults() {
 document.getElementById('settings-btn').addEventListener('click', async () => {
   settingsForm.reset();
   settingsFormError.textContent = '';
+  document.getElementById('theme-select').value = document.documentElement.getAttribute('data-theme') || 'dark';
   const data = await loadUserDefaults();
   const clearPasswordWrap = document.getElementById('settings-clear-password-wrap');
   document.getElementById('settings-clear-password').checked = false;
@@ -2832,6 +2999,24 @@ document.getElementById('settings-btn').addEventListener('click', async () => {
 });
 document.getElementById('settings-cancel-btn').addEventListener('click', () => {
   settingsModalBackdrop.classList.remove('open');
+});
+
+// Applies and saves immediately on change, separately from the RDP
+// defaults form's own explicit Save button below - a visual preference
+// like this has no validation risk and benefits from instant feedback
+// rather than a "did I remember to save it" step.
+document.getElementById('theme-select').addEventListener('change', async (e) => {
+  const theme = e.target.value;
+  applyTheme(theme);
+  try {
+    await fetch('/api/auth/theme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme }),
+    });
+  } catch (err) {
+    console.warn('Failed to save theme preference', err);
+  }
 });
 
 settingsForm.addEventListener('submit', async (e) => {

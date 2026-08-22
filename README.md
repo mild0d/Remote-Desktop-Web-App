@@ -671,6 +671,24 @@ login/callback routes, with zero effect on local accounts or anyone
 already using them. There's no scenario where an Entra-side problem locks
 someone out of local login.
 
+## Themes
+
+**⚙️ Settings → Appearance** has a theme dropdown: Dark (the original
+default), Light, Windows 11, Windows 10, and Windows XP. It applies
+immediately and is saved to your account - it'll follow you to any
+device you sign in from, not just this browser.
+
+The three Windows-styled themes are deliberately evocative rather than
+literal recreations - each aims to capture that era's actual defining
+details (Windows 11's rounded corners and Mica-like surfaces, Windows
+10's flatter and sharper-edged chrome, XP's iconic Luna blue gradient
+title bars and beveled buttons) rather than just recoloring the same
+flat look three times.
+
+Existing accounts see no change at all until someone actively picks a
+different theme - the saved default is Dark, matching the app's only
+appearance before this feature existed.
+
 ## Roles and permissions
 
 Beyond the basic "admin or not," there are four roles:

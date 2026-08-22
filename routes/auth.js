@@ -9,6 +9,8 @@ const {
   changePassword,
   setDefaultCredentials,
   getDefaultCredentialsStatus,
+  getUserTheme,
+  setUserTheme,
   isAdmin,
   getUserRole,
   isTotpEnabled,
@@ -309,9 +311,25 @@ router.get('/me', (req, res) => {
       role,
       permissions: PERMISSIONS[role] || PERMISSIONS.user,
       isSSO: Boolean(user && user.sso_subject),
+      theme: getUserTheme(req.session.userId),
     });
   }
   res.json({ authenticated: false });
+});
+
+router.post('/theme', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  try {
+    setUserTheme(req.session.userId, req.body && req.body.theme);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === 'INVALID_THEME') {
+      return res.status(400).json({ error: 'Invalid theme' });
+    }
+    res.status(500).json({ error: 'Failed to save theme' });
+  }
 });
 
 // Returns whether default credentials are set and the saved username, but
