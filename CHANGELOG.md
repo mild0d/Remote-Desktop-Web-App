@@ -7,6 +7,19 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.10.0] - 2026-08-20
+
+### Added
+- ⛶ Fullscreen button in the session toolbar, next to Ctrl+Alt+Del. Fills
+  the screen with that session; move the mouse to the top edge to reveal
+  a thin, auto-hiding bar with an Exit fullscreen button (Esc also always
+  works, as usual). The RDP session's resolution renegotiates to match
+  automatically, both entering and leaving.
+- Open session tabs can now be dragged left or right to reorder them.
+  The ☰ Connections tab always stays fixed on the far left and can't be
+  dragged or displaced - only the open session tabs reorder among
+  themselves.
+
 ## [1.9.2] - 2026-08-20
 
 ### Fixed

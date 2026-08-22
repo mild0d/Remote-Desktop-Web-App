@@ -138,6 +138,23 @@ operating system itself, beneath the browser entirely - so this button
 simulates the sequence directly instead, the same approach every other
 remote desktop tool uses for this specific combination.
 
+### Fullscreen
+
+**⛶ Fullscreen** in the session toolbar fills the whole screen with that
+session - everything else, including the tab bar, is hidden the way any
+fullscreen video player hides its own browser chrome. Move the mouse to
+the very top of the screen to reveal a thin bar with an **Exit
+fullscreen** button; it hides itself again after a few seconds. The
+usual way out also always works - press Esc, same as leaving fullscreen
+video.
+
+### Reordering open session tabs
+
+Drag any open session tab left or right to reorder it. The **☰
+Connections** tab always stays put on the far left - it's not
+draggable, so open sessions can be freely reordered among themselves
+without ever displacing it.
+
 ### Reachability indicator
 
 Each card shows a small dot next to its name — green if the host currently
