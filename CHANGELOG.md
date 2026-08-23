@@ -7,6 +7,24 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.11.2] - 2026-08-23
+
+### Fixed
+- Pasting would intermittently spam a burst of repeated "v" characters
+  into the remote session until manually interrupted. Cause: holding
+  Ctrl+V down even slightly longer than instantaneous - completely
+  normal, not a mistake - triggers the browser's own native key-repeat,
+  firing additional keydown events every ~30-50ms for as long as it's
+  held. Nothing distinguished those from a genuine fresh keypress, so
+  each one independently ran the full paste-handling sequence again,
+  sending its own simulated Ctrl+V to the remote - multiple overlapping
+  paste sequences landing in quick succession, which is what actually
+  produced the repeated characters. Explains why it was intermittent:
+  it only happened on presses that happened to last past the browser's
+  key-repeat threshold. Fixed by ignoring auto-repeated keydown events
+  for this shortcut specifically, using the standard KeyboardEvent.repeat
+  property built for exactly this.
+
 ## [1.11.1] - 2026-08-20
 
 ### Fixed

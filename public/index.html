@@ -2090,6 +2090,23 @@ document.addEventListener('keydown', (e) => {
   const isPasteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'v';
   if (!isPasteShortcut) return;
 
+  // Holding the keys down even slightly longer than instantaneous -
+  // completely normal, not a mistake - triggers the browser's own native
+  // key-repeat, firing additional keydown events for 'v' every ~30-50ms
+  // for as long as it's held, with ctrlKey still true on each one. Without
+  // this check, every single repeat re-triggered this entire handler
+  // independently, each eventually sending its own full simulated Ctrl+V
+  // sequence below - multiple overlapping paste sequences landing on the
+  // remote in quick succession, which is what actually caused the
+  // intermittent burst of repeated characters. e.repeat is true
+  // specifically (and only) on these auto-repeated events, never on the
+  // one genuine keydown that starts a real press-and-hold.
+  if (e.repeat) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
   const session = sessions.get(activeKey);
   if (!session || !session.client) return;
 
