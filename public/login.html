@@ -195,6 +195,25 @@
       }
     }
 
+    // Picks up where the SSO callback left off (see routes/auth.js) for an
+    // account with app 2FA required - Microsoft has already confirmed
+    // identity by this point, this is purely this app's own additional
+    // check before actually granting access. Reuses the exact same UI
+    // and session state local password login already uses for this,
+    // just entered via a redirect instead of an AJAX response.
+    {
+      const params = new URLSearchParams(window.location.search);
+      const ssoPending = params.get('ssoPending');
+      if (ssoPending) window.history.replaceState({}, '', window.location.pathname);
+      if (ssoPending === '2fa') {
+        loginForm.classList.add('d-none');
+        twofaForm.classList.remove('d-none');
+        document.getElementById('twofa-code').focus();
+      } else if (ssoPending === 'setup') {
+        showMandatorySetup();
+      }
+    }
+
     document.getElementById('show-register').addEventListener('click', (e) => {
       e.preventDefault();
       loginForm.classList.add('d-none');

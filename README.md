@@ -649,24 +649,50 @@ again later, they get the same account back rather than a duplicate.
 
 ### Two-factor authentication for SSO users
 
-SSO logins skip this app's own mandatory 2FA entirely - the whole point
-of real SSO is centralizing authentication policy (including MFA) at the
-identity provider, not enforcing it a second time here. Whatever MFA
+By default, SSO logins skip this app's own 2FA entirely - the usual
+point of SSO is centralizing authentication policy (including MFA) at
+the identity provider, not enforcing it a second time here. Whatever MFA
 policy your organization already has configured in Entra applies as
-normal; this app doesn't ask for a second code on top of it.
+normal.
+
+An admin can override this per account, though, in **🛡️ Admin** - a
+**"Require app 2FA"** checkbox appears next to each SSO account, for
+anyone who wants real defense-in-depth beyond whatever Entra alone
+considers sufficient (compromising both the Microsoft account *and* this
+app's separate authenticator code becomes necessary, not just one).
+This is purely admin-controlled - an SSO user can't turn it on for
+themselves, only an admin can.
+
+Turning it on for an account that's never set up 2FA before means their
+very next login stops right after Microsoft confirms their identity,
+requiring 2FA setup on the spot before they get real access - the same
+mandatory flow local account registration already uses. From then on,
+every login asks for the code too, on top of Microsoft's own
+authentication. Turning the requirement back off only stops asking for
+the code - it deliberately never deletes their actual 2FA setup, so
+turning it back on later works immediately without them setting it up
+again.
 
 ### Passwords for SSO accounts
 
 SSO accounts have no usable local password - the one created internally
 at auto-provisioning is a random placeholder nobody ever saw. So the
-change-password and 2FA controls are hidden for them, and the admin
-panel won't offer "Reset password" on them either (they show a small
-"SSO" badge instead). All of this is enforced server-side too, not just
-hidden: giving an SSO account a working local password would quietly
-create a second way in that Entra doesn't control - including for
-someone who's since been removed from Entra. If someone needs their
-password or MFA reset, that happens in Entra, where their sign-in
-actually lives.
+change-password control is hidden for them, and the admin panel won't
+offer "Reset password" on them either (they show a small "SSO" badge
+instead). All of this is enforced server-side too, not just hidden:
+giving an SSO account a working local password would quietly create a
+second way in that Entra doesn't control - including for someone who's
+since been removed from Entra. If someone needs their password reset,
+that happens in Entra, where their sign-in actually lives.
+
+The person's own self-service 2FA button is hidden too, for the same
+reason - but this is specifically about the *button*, not necessarily
+the feature. If an admin has required this app's own 2FA for a
+particular SSO account (see above), that's a genuinely separate,
+app-managed second factor - distinct from whatever MFA policy Entra
+itself enforces, and reset the same way a local account's would be (an
+admin can disable it for them in the admin panel if they lose access to
+their authenticator).
 
 ### If something goes wrong
 
@@ -675,6 +701,18 @@ immediately removes the "Sign in with Microsoft" button and disables the
 login/callback routes, with zero effect on local accounts or anyone
 already using them. There's no scenario where an Entra-side problem locks
 someone out of local login.
+
+## Automatic sign-out after inactivity
+
+**⚙️ Settings → Session** lets you set how many minutes of inactivity
+sign you out automatically - between 5 minutes and 8 hours, defaulting
+to 1 hour. Entirely under your own control; no admin involvement.
+
+Only mouse/keyboard use on this page itself counts as activity - an
+open connection sitting untouched in a background tab does not keep you
+signed in on its own. Signing out this way is a real, full sign-out: it
+also closes any open connection tabs, the same as manually logging out
+would.
 
 ## Themes
 

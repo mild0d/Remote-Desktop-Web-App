@@ -7,6 +7,40 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.14.0] - 2026-08-23
+
+### Added
+- Automatic sign-out after inactivity, in ⚙️ Settings → Session -
+  entirely user-controlled, no admin involvement. Configurable between
+  5 minutes and 8 hours, defaulting to 1 hour. Only mouse/keyboard use
+  on the page itself counts as activity - an open connection sitting
+  untouched in a background tab does not keep the session alive on its
+  own. Signing out this way is a genuine, full sign-out, closing any
+  open connection tabs along with it - the same simplicity tradeoff as
+  a manual logout, chosen deliberately over the added complexity of
+  preserving sessions through an automatic sign-out.
+
+## [1.13.0] - 2026-08-23
+
+### Added
+- Per-account, admin-controlled option to require this app's own 2FA on
+  top of Microsoft's authentication for SSO logins - a "Require app
+  2FA" checkbox next to each SSO account in 🛡️ Admin. Genuine
+  defense-in-depth: compromising both the Microsoft account and this
+  app's separate authenticator code becomes necessary, not just one.
+  Purely admin-controlled by design - an SSO user can't turn this on
+  for themselves. Checked after Microsoft confirms identity but before
+  granting a working session, reusing the exact same mandatory-setup
+  and code-verification flow local accounts already use, rather than a
+  separate parallel system.
+- Turning the requirement off only stops asking for the code - it
+  deliberately never deletes the person's actual 2FA setup, so turning
+  it back on later works immediately without them setting it up again.
+  Verified directly end-to-end: required 2FA on a real SSO account,
+  completed setup, turned the requirement off, turned it back on, and
+  confirmed the original authenticator code still worked without any
+  re-setup.
+
 ## [1.12.4] - 2026-08-23
 
 ### Changed

@@ -2,6 +2,8 @@ const express = require('express');
 const {
   listAllUsers,
   setUserRole,
+  getSSOTwoFactorRequired,
+  setSSOTwoFactorRequired,
   adminResetPassword,
   deleteUser,
   findById,
@@ -56,6 +58,28 @@ router.post('/users/:id/role', requirePermission('manageUsers'), (req, res) => {
       return res.status(400).json({ error: err.message });
     }
     res.status(500).json({ error: 'Failed to update role' });
+  }
+});
+
+router.post('/users/:id/sso-2fa-required', requirePermission('manageUsers'), (req, res) => {
+  const userId = Number(req.params.id);
+  const { required } = req.body || {};
+  const user = findById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  try {
+    setSSOTwoFactorRequired(userId, Boolean(required));
+    logAdminEvent({
+      adminUsername: req.session.username,
+      action: required ? 'Required app 2FA for SSO login' : 'No longer requires app 2FA for SSO login (existing 2FA setup, if any, is left in place)',
+      targetUsername: user.username,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === 'NOT_SSO_ACCOUNT') {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: 'Failed to update setting' });
   }
 });
 

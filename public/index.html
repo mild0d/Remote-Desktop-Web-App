@@ -565,6 +565,16 @@
 
       <hr class="mb-4" />
 
+      <h3 class="h6 text-secondary text-uppercase mb-3" style="font-size: 12px; letter-spacing: 0.04em;">Session</h3>
+      <div class="mb-4">
+        <label class="form-label">Sign me out automatically after (minutes of inactivity)</label>
+        <input type="number" id="idle-timeout-minutes" class="form-control" min="5" max="480" step="1" style="max-width: 140px;" />
+        <div class="form-text">Between 5 minutes and 8 hours. Only mouse/keyboard use on this page counts as activity - an open connection sitting untouched in the background does not keep you signed in.</div>
+        <div class="form-text" id="idle-timeout-status"></div>
+      </div>
+
+      <hr class="mb-4" />
+
       <h3 class="h6 text-secondary text-uppercase mb-3" style="font-size: 12px; letter-spacing: 0.04em;">Default RDP credentials</h3>
       <p class="text-secondary small">
         Saved here once, these are used automatically for any connection whose
@@ -2510,8 +2520,15 @@ async function loadAdminPanel() {
         </select>`
       : `<span class="${u.role === 'admin' ? 'text-success' : ''}">${ROLE_LABELS[u.role] || u.role}</span>`;
 
+    const sso2faToggle = u.is_sso
+      ? `<div class="form-check form-check-inline ms-2" title="Require this app's own 2FA at login, on top of Microsoft's own authentication">
+          <input class="form-check-input" type="checkbox" data-sso-2fa-required="${u.id}" ${u.sso_2fa_required ? 'checked' : ''} ${!currentUserPermissions.manageUsers ? 'disabled' : ''} />
+          <label class="form-check-label small text-secondary">Require app 2FA</label>
+        </div>`
+      : '';
+
     tr.innerHTML = `
-      <td>${escapeHtml(u.username)}${isSelf ? ' <span class="text-secondary small">(you)</span>' : ''}${u.is_sso ? ' <span class="badge text-bg-secondary" title="Signs in with Microsoft - password and MFA are managed in Entra">SSO</span>' : ''}${u.locked ? ` <span class="badge text-bg-danger">Locked (${u.lockoutMinutesRemaining}m)</span>` : ''}</td>
+      <td>${escapeHtml(u.username)}${isSelf ? ' <span class="text-secondary small">(you)</span>' : ''}${u.is_sso ? ' <span class="badge text-bg-secondary" title="Signs in with Microsoft - password is managed in Entra">SSO</span>' : ''}${u.locked ? ` <span class="badge text-bg-danger">Locked (${u.lockoutMinutesRemaining}m)</span>` : ''}${sso2faToggle}</td>
       <td>${roleCell}</td>
       <td class="text-secondary small">${new Date(u.created_at).toLocaleDateString()}</td>
       <td class="text-end">
@@ -2890,21 +2907,39 @@ adminRegistrationToggle.addEventListener('change', async () => {
 
 adminUsersRows.addEventListener('change', async (e) => {
   const roleUserId = e.target.getAttribute('data-role-select');
-  if (!roleUserId) return;
+  const sso2faUserId = e.target.getAttribute('data-sso-2fa-required');
 
-  adminError.textContent = '';
-  const newRole = e.target.value;
-  const res = await fetch(`/api/admin/users/${roleUserId}/role`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role: newRole }),
-  });
-  if (res.ok) {
-    loadAdminPanel();
-  } else {
-    const data = await res.json().catch(() => ({}));
-    adminError.textContent = data.error || 'Failed to update role';
-    loadAdminPanel(); // revert the dropdown to the actual current role
+  if (roleUserId) {
+    adminError.textContent = '';
+    const newRole = e.target.value;
+    const res = await fetch(`/api/admin/users/${roleUserId}/role`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole }),
+    });
+    if (res.ok) {
+      loadAdminPanel();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      adminError.textContent = data.error || 'Failed to update role';
+      loadAdminPanel(); // revert the dropdown to the actual current role
+    }
+    return;
+  }
+
+  if (sso2faUserId) {
+    adminError.textContent = '';
+    const required = e.target.checked;
+    const res = await fetch(`/api/admin/users/${sso2faUserId}/sso-2fa-required`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ required }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      adminError.textContent = data.error || 'Failed to update setting';
+      e.target.checked = !required; // revert on failure
+    }
   }
 });
 
@@ -2973,6 +3008,7 @@ let currentUserId = null;
 let currentUserRole = 'user';
 let currentUserPermissions = {};
 let currentUserIsSSO = false;
+let currentIdleTimeoutMinutes = 60;
 
 // Applies a theme immediately and caches it locally so the anti-flash
 // inline script at the top of the page can use it on the very next load,
@@ -2983,6 +3019,29 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   try { localStorage.setItem('theme', theme); } catch (err) { /* private browsing, storage disabled, etc. */ }
 }
+
+// Entirely user-controlled idle-sign-out. Only mouse/keyboard use on this
+// page counts as activity - by design, an open connection sitting
+// untouched in a background tab does not keep the session alive, since
+// that's specifically what the person asked for this to check. Logging
+// out here means an actual server-side logout (not just a client-side
+// redirect) - a real navigation to the login page, which also means any
+// open session tabs are torn down along with it, a deliberate simplicity
+// tradeoff the person chose over preserving them.
+let lastActivityAt = Date.now();
+function markActivity() {
+  lastActivityAt = Date.now();
+}
+['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach((eventName) => {
+  document.addEventListener(eventName, markActivity, { passive: true });
+});
+setInterval(async () => {
+  const idleMs = Date.now() - lastActivityAt;
+  if (idleMs >= currentIdleTimeoutMinutes * 60 * 1000) {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    window.location.href = '/login.html';
+  }
+}, 15000); // checked every 15s - frequent enough to feel responsive, infrequent enough to be free to run indefinitely
 
 async function checkAuth() {
   const res = await fetch('/api/auth/me');
@@ -2995,6 +3054,7 @@ async function checkAuth() {
   currentUserRole = data.role || 'user';
   currentUserPermissions = data.permissions || {};
   currentUserIsSSO = Boolean(data.isSSO);
+  if (Number.isFinite(data.idleTimeoutMinutes)) currentIdleTimeoutMinutes = data.idleTimeoutMinutes;
   // Reconciles with the account's actual saved theme, in case it differs
   // from what the anti-flash script applied from the local cache (e.g.
   // changed on another device) - applyTheme re-caches it locally too, so
@@ -3096,6 +3156,8 @@ document.getElementById('settings-btn').addEventListener('click', async () => {
   settingsForm.reset();
   settingsFormError.textContent = '';
   document.getElementById('theme-select').value = document.documentElement.getAttribute('data-theme') || 'dark';
+  document.getElementById('idle-timeout-minutes').value = currentIdleTimeoutMinutes;
+  document.getElementById('idle-timeout-status').textContent = '';
   const data = await loadUserDefaults();
   const clearPasswordWrap = document.getElementById('settings-clear-password-wrap');
   document.getElementById('settings-clear-password').checked = false;
@@ -3129,6 +3191,29 @@ document.getElementById('theme-select').addEventListener('change', async (e) => 
     });
   } catch (err) {
     console.warn('Failed to save theme preference', err);
+  }
+});
+
+document.getElementById('idle-timeout-minutes').addEventListener('change', async (e) => {
+  const statusEl = document.getElementById('idle-timeout-status');
+  const minutes = Number(e.target.value);
+  statusEl.classList.remove('text-danger');
+  statusEl.textContent = '';
+
+  const res = await fetch('/api/auth/idle-timeout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ minutes }),
+  });
+  if (res.ok) {
+    currentIdleTimeoutMinutes = minutes;
+    markActivity(); // the new setting shouldn't immediately count time spent under the old one
+    statusEl.textContent = 'Saved.';
+  } else {
+    const data = await res.json().catch(() => ({}));
+    statusEl.classList.add('text-danger');
+    statusEl.textContent = data.error || 'Failed to save';
+    e.target.value = currentIdleTimeoutMinutes; // revert to the last known-good value
   }
 });
 

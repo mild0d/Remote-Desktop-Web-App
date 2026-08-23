@@ -11,6 +11,8 @@ const {
   getDefaultCredentialsStatus,
   getUserTheme,
   setUserTheme,
+  getIdleTimeoutMinutes,
+  setIdleTimeoutMinutes,
   isAdmin,
   getUserRole,
   isTotpEnabled,
@@ -29,6 +31,7 @@ const {
   getRecoveryCodesStatus,
   findBySSOSubject,
   createUserFromSSO,
+  getSSOTwoFactorRequired,
   LOCKOUT_DURATION_MS,
 } = require('../lib/users');
 const { getConfig: getSSOConfig, getConfigStatus: getSSOConfigStatus } = require('../lib/ssoConfig');
@@ -312,6 +315,7 @@ router.get('/me', (req, res) => {
       permissions: PERMISSIONS[role] || PERMISSIONS.user,
       isSSO: Boolean(user && user.sso_subject),
       theme: getUserTheme(req.session.userId),
+      idleTimeoutMinutes: getIdleTimeoutMinutes(req.session.userId),
     });
   }
   res.json({ authenticated: false });
@@ -329,6 +333,21 @@ router.post('/theme', (req, res) => {
       return res.status(400).json({ error: 'Invalid theme' });
     }
     res.status(500).json({ error: 'Failed to save theme' });
+  }
+});
+
+router.post('/idle-timeout', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  try {
+    setIdleTimeoutMinutes(req.session.userId, req.body && req.body.minutes);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === 'INVALID_IDLE_TIMEOUT') {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: 'Failed to save idle timeout' });
   }
 });
 
@@ -506,13 +525,35 @@ router.get('/sso/callback', async (req, res) => {
       user = createUserFromSSO({ subject: claims.sub, email: claims.email, name: claims.name });
     }
 
-    // SSO logins skip this app's own mandatory 2FA entirely - real SSO
+    // SSO logins skip this app's own mandatory 2FA by default - real SSO
     // means centralizing auth policy (including MFA) at the identity
-    // provider, not enforcing it a second time here. Fresh session ID
-    // before granting access - same fixation-defense principle used at
-    // every other privilege-transition point in this file.
+    // provider, not enforcing it a second time here. An admin can
+    // override this per account, though, for anyone who genuinely wants
+    // defense-in-depth beyond whatever Microsoft alone considers
+    // sufficient. Fresh session ID before granting any privilege at all -
+    // same fixation-defense principle used at every other
+    // privilege-transition point in this file.
     req.session.regenerate((err) => {
       if (err) return res.redirect('/login.html?ssoError=' + encodeURIComponent('Failed to create session.'));
+
+      if (getSSOTwoFactorRequired(user.id)) {
+        if (isTotpEnabled(user.id)) {
+          // Already set up from a previous login - just needs the code,
+          // reusing the exact same pending-login mechanism local
+          // password login already uses for this.
+          req.session.pending2FAUserId = user.id;
+          logLoginEvent({ username: user.username, success: false, reason: 'SSO authenticated - app 2FA code required', ip: req.ip });
+          return res.redirect('/login.html?ssoPending=2fa');
+        }
+        // Required for this account, but never set up yet (a brand new
+        // SSO account, or one flagged as requiring this after the fact) -
+        // mandatory setup before any real access, same as a fresh local
+        // registration.
+        req.session.pendingSetupUserId = user.id;
+        logLoginEvent({ username: user.username, success: false, reason: 'SSO authenticated - app 2FA setup required before access', ip: req.ip });
+        return res.redirect('/login.html?ssoPending=setup');
+      }
+
       req.session.userId = user.id;
       req.session.username = user.username;
       logLoginEvent({ username: user.username, success: true, reason: 'Login successful (SSO)', ip: req.ip });
