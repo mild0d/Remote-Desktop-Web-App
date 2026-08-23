@@ -10,6 +10,11 @@ connections are private to them. Both users and connections are stored in
 flat JSON files rather than a database, and the entire frontend is one HTML
 file (`public/index.html`) with inline CSS/JS.
 
+## Screenshots
+
+### Connections
+![Connections grid](screenshots/connections-grid.jpg)
+
 ## How it works
 
 ```
