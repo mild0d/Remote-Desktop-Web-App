@@ -7,6 +7,69 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.12.4] - 2026-08-23
+
+### Changed
+- Documented how to copy/paste in SSH sessions: Ctrl+Shift+V to paste,
+  confirmed reliable; select-to-copy back to the local clipboard works
+  automatically, same as any terminal. Plain Ctrl+V is intended to work
+  identically (the app doesn't distinguish between the two), but wasn't
+  reliably reaching the app in testing on at least one setup - the
+  underlying cause wasn't something in this app's own code, so
+  Ctrl+Shift+V is the documented, confirmed-working shortcut for now.
+
+## [1.12.3] - 2026-08-23
+
+### Fixed
+- The actual root cause of paste working once and then never again,
+  found via a real browser stack trace rather than another guess:
+  `disableKeyboardForwarding()` set Guacamole's shared keyboard object's
+  `onkeydown`/`onkeyup` to `null` while a paste was being simulated. But
+  pressing a paste shortcut with modifier keys (e.g. Ctrl+Shift+V) means
+  Control and Shift are pressed *before* "v" - those keydowns aren't
+  paste shortcuts themselves, so they were never intercepted, and
+  reached Guacamole's own keyboard handling completely normally,
+  including its internal timer for tracking held keys. When that timer
+  later tried to call `onkeyup` and found `null` instead of a function,
+  it crashed outright inside Guacamole's own library code - corrupting
+  its internal keyboard state for the rest of the session, which is
+  exactly why paste (and general typing reliability) degraded after the
+  first attempt and never recovered without reconnecting. Fixed by using
+  harmless no-op functions instead of `null`, so a late call from
+  Guacamole's own internal timer is absorbed safely instead of crashing.
+  Confirmed directly: reproduced the exact error message pattern from
+  the reported crash, and confirmed it no longer occurs with this fix.
+
+## [1.12.2] - 2026-08-23
+
+### Fixed
+- SSH paste worked once, then stopped working until reconnecting.
+  Confirmed the actual cause with direct diagnostic evidence rather than
+  guessing again: an SSH terminal's own cursor/selection handling
+  occasionally fires a spurious "clipboard changed" report containing
+  nothing but a newline - not a deliberate copy by the person using it.
+  That was being blindly synced to the browser's clipboard, silently
+  overwriting whatever had actually been copied moments earlier with an
+  empty value. The next paste attempt then correctly pasted exactly
+  that - nothing - which looked like paste had simply stopped working.
+  Now ignores empty/whitespace-only clipboard reports from the remote
+  side entirely, for both protocols - nobody ever deliberately copies
+  nothing, so this can only prevent the problem, never discard a real
+  copy.
+
+## [1.12.1] - 2026-08-23
+
+### Fixed
+- Copy/paste didn't work in SSH sessions, introduced in 1.12.0. Cause:
+  the fix forwarded a literal Ctrl+V keystroke to the terminal, on the
+  assumption that would work like it does on Windows - but Ctrl+V isn't
+  a paste shortcut in a standard shell at all; it's traditionally an
+  entirely different readline control character. Now correctly
+  simulates Shift+Insert instead, the standard paste shortcut across the
+  xterm/Linux terminal family and what Guacamole's own SSH handling
+  recognizes for pasting from its synced clipboard. RDP sessions are
+  unaffected - still the same Ctrl+V sequence as before.
+
 ## [1.12.0] - 2026-08-23
 
 ### Added

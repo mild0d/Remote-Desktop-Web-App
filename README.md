@@ -749,6 +749,20 @@ onto the same canvas instead of a Windows desktop. The one exception is
 Ctrl+Alt+Del, which hides itself for SSH sessions since it's a
 Windows-specific concept with no meaning in a terminal.
 
+### Copying and pasting in an SSH session
+
+To paste something into an SSH session, copy it normally on your own
+computer, then press **Ctrl+Shift+V** inside the session. This differs
+from RDP (which uses the regular Ctrl+V) for a good reason: in a
+standard Linux shell, Ctrl+V isn't a paste shortcut at all - it's
+traditionally an entirely different readline control character. This
+app translates whatever you press into the right underlying action for
+each protocol.
+
+Copying *from* an SSH session back to your own clipboard works
+automatically - just select text with the mouse inside the terminal, the
+same as any terminal application.
+
 ## Shared drive uploads
 
 Uploading a large file to the shared drive (📁 in a session) shows a

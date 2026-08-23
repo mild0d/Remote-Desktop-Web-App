@@ -2089,8 +2089,19 @@ function enableKeyboardForwarding(session) {
 }
 
 function disableKeyboardForwarding() {
-  sharedKeyboard.onkeydown = null;
-  sharedKeyboard.onkeyup = null;
+  // Deliberately no-op functions, never null. Guacamole's own keyboard
+  // object can have an in-flight internal timer already running for a
+  // modifier key (Control/Shift) that was pressed physically before this
+  // function ever ran - those keydowns aren't paste shortcuts themselves,
+  // so they're never intercepted here, and reach Guacamole's own listener
+  // completely normally. When that timer later fires and tries to call
+  // onkeyup, null crashes it outright (confirmed directly via a real
+  // stack trace: "t.onkeyup is not a function") - which corrupts
+  // Guacamole's internal keyboard state for the rest of the session,
+  // explaining why paste worked once and then silently stopped working
+  // for good afterward. A no-op absorbs that harmlessly instead.
+  sharedKeyboard.onkeydown = () => {};
+  sharedKeyboard.onkeyup = () => {};
 }
 
 function sendTextToActiveSession(text) {
@@ -2156,13 +2167,6 @@ document.addEventListener('keydown', (e) => {
   const session = sessions.get(activeKey);
   if (!session || !session.client) return;
 
-  // The whole simulated-paste approach below exists specifically because
-  // that's how Windows/RDP expects to receive a paste - it doesn't apply
-  // to an SSH terminal, which just wants Ctrl+V forwarded as a normal
-  // keystroke like any other. Guacamole's own listener handles that
-  // correctly on its own; nothing to intercept here for SSH.
-  if (session.protocol === 'ssh') return;
-
   e.preventDefault();
   e.stopPropagation();
 
@@ -2171,19 +2175,38 @@ document.addEventListener('keydown', (e) => {
   // resumed once the manual sequence below has been sent.
   disableKeyboardForwarding();
 
+  const isSSH = session.protocol === 'ssh';
+
   navigator.clipboard.readText().then((text) => {
     sendTextToActiveSession(text); // updates the remote session's clipboard buffer first
     // Pushing the clipboard update and simulating the keypress in the
     // right JS execution order isn't enough on its own - the update
-    // still has to travel browser -> guacd -> RDP protocol -> the remote
-    // machine's own OS clipboard, which takes real time. This delay is a
-    // pragmatic buffer for that round-trip - there's no explicit
-    // "clipboard update confirmed" signal available to wait on instead.
+    // still has to travel browser -> guacd -> the remote session's own
+    // clipboard, which takes real time. This delay is a pragmatic buffer
+    // for that round-trip - there's no explicit "clipboard update
+    // confirmed" signal available to wait on instead.
     setTimeout(() => {
-      session.client.sendKeyEvent(1, 0xffe3); // Control_L down
-      session.client.sendKeyEvent(1, 0x0076); // v down
-      session.client.sendKeyEvent(0, 0x0076); // v up
-      session.client.sendKeyEvent(0, 0xffe3); // Control_L up
+      if (isSSH) {
+        // Forwarding a literal Ctrl+V to an SSH terminal doesn't paste
+        // anything - in a standard shell, Ctrl+V is traditionally an
+        // entirely different readline control character ("insert the
+        // next character literally"), not a paste shortcut at all.
+        // Shift+Insert is the actual standard paste shortcut across the
+        // xterm/Linux terminal family, and what Guacamole's own SSH
+        // handling recognizes for pasting from its synced clipboard.
+        // Keysyms confirmed directly against guacamole-common-js's own
+        // keyboard mapping table (Shift: 0xFFE1, Insert: 0xFF63) rather
+        // than assumed from memory.
+        session.client.sendKeyEvent(1, 0xffe1); // Shift_L down
+        session.client.sendKeyEvent(1, 0xff63); // Insert down
+        session.client.sendKeyEvent(0, 0xff63); // Insert up
+        session.client.sendKeyEvent(0, 0xffe1); // Shift_L up
+      } else {
+        session.client.sendKeyEvent(1, 0xffe3); // Control_L down
+        session.client.sendKeyEvent(1, 0x0076); // v down
+        session.client.sendKeyEvent(0, 0x0076); // v up
+        session.client.sendKeyEvent(0, 0xffe3); // Control_L up
+      }
       enableKeyboardForwarding(session); // resume normal typing
     }, 200);
   }).catch((err) => {
@@ -2398,6 +2421,18 @@ async function openOrFocusSession(id, name, adHocCredentials) {
           session.lastSentToRemote = null; // only guard against the very next matching echo, not indefinitely
           return;
         }
+        // An SSH terminal's own cursor/selection handling can fire a
+        // spurious clipboard-change report containing nothing but
+        // whitespace (confirmed directly - one such report was seen
+        // containing only a newline) - not a deliberate copy by the
+        // person using it. Blindly syncing that would silently overwrite
+        // whatever they'd actually copied moments earlier with nothing,
+        // which is exactly what caused paste to stop working after the
+        // first attempt. Nobody ever deliberately copies nothing, so
+        // skipping empty/whitespace-only reports here is a pure
+        // improvement regardless of protocol - there's no legitimate
+        // copy this could ever incorrectly discard.
+        if (data.trim() === '') return;
         navigator.clipboard.writeText(data).catch((err) => {
           console.warn('[clipboard] Failed to write remote clipboard content to the system clipboard:', err);
         });
