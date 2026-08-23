@@ -243,25 +243,30 @@ router.get('/:id/reachability-history', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags } = req.body || {};
+  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, protocol } = req.body || {};
   if (!name || !hostname) {
     return res.status(400).json({ error: 'name and hostname are required' });
   }
+  if (protocol && protocol !== 'rdp' && protocol !== 'ssh') {
+    return res.status(400).json({ error: 'Invalid protocol' });
+  }
 
   const list = loadAll();
+  const resolvedProtocol = protocol || 'rdp';
   const conn = {
     id: nextId(list),
     user_id: req.session.userId,
+    protocol: resolvedProtocol,
     name,
     hostname,
-    port: parseInt(port, 10) || 3389,
+    port: parseInt(port, 10) || (resolvedProtocol === 'ssh' ? 22 : 3389),
     username: username || '',
     password: password ? encrypt(password) : '',
     domain: domain || '',
     security: security || 'any',
     ignore_cert: ignore_cert === false ? 0 : 1,
     color_depth: color_depth || '16',
-    icon: icon || '🖥️',
+    icon: icon || (resolvedProtocol === 'ssh' ? '⌨️' : '🖥️'),
     notes: notes || '',
     tags: Array.isArray(tags) ? tags : [],
     created_at: new Date().toISOString(),
@@ -279,10 +284,14 @@ router.put('/:id', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
 
   const existing = list[idx];
-  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, clearPassword } = req.body || {};
+  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, clearPassword, protocol } = req.body || {};
+  if (protocol && protocol !== 'rdp' && protocol !== 'ssh') {
+    return res.status(400).json({ error: 'Invalid protocol' });
+  }
 
   list[idx] = {
     ...existing,
+    protocol: protocol || existing.protocol || 'rdp',
     name: name ?? existing.name,
     hostname: hostname ?? existing.hostname,
     port: port ? parseInt(port, 10) : existing.port,
@@ -376,37 +385,60 @@ router.post('/:id/token', (req, res) => {
     ensureUserDriveDir(req.session.userId);
 
     const { width, height, username: adHocUsername, password: adHocPassword, domain: adHocDomain } = req.body || {};
+    const protocol = conn.protocol || 'rdp';
 
-    const settings = {
-      hostname: conn.hostname,
-      port: String(conn.port),
-      'ignore-cert': conn.ignore_cert ? 'true' : 'false',
-      security: conn.security || 'any',
-      width: String(width || '1280'),
-      height: String(height || '800'),
-      dpi: '96',
-      'resize-method': 'display-update',
-      'color-depth': String(conn.color_depth || '16'),
-      'enable-drive': 'true',
-      'drive-path': userDrivePathForGuacd(req.session.userId),
-      'create-drive-path': 'true',
-      'drive-name': 'Shared Drive',
-      'disable-download': 'false',
-      'disable-upload': 'false',
-      'enable-clipboard': 'true',
-    };
-    // Precedence, highest first: credentials typed into the one-time
-    // connect prompt (never saved anywhere, used only for this single
-    // connection attempt) -> the connection's own saved values -> the
-    // user's centrally-saved defaults.
-    const defaults = getDefaultCredentials(req.session.userId);
-    const effectiveUsername = adHocUsername || conn.username || defaults.username;
-    const effectivePassword = adHocPassword || (conn.password ? decrypt(conn.password) : defaults.password);
-    const effectiveDomain = adHocDomain || conn.domain || defaults.netbios_domain;
+    let settings;
+    let effectiveUsername;
+    let effectivePassword;
+
+    if (protocol === 'ssh') {
+      // Deliberately does not fall back to the account's saved default
+      // credentials below (unlike RDP) - those are explicitly labeled
+      // "Default RDP credentials" in the UI, and for most real setups an
+      // SSH box's login has nothing to do with a Windows admin account.
+      // Falling back to it silently here would connect with the wrong
+      // identity instead of clearly prompting for the right one.
+      effectiveUsername = adHocUsername || conn.username;
+      effectivePassword = adHocPassword || (conn.password ? decrypt(conn.password) : '');
+      settings = {
+        hostname: conn.hostname,
+        port: String(conn.port),
+        width: String(width || '1280'),
+        height: String(height || '800'),
+        dpi: '96',
+      };
+    } else {
+      settings = {
+        hostname: conn.hostname,
+        port: String(conn.port),
+        'ignore-cert': conn.ignore_cert ? 'true' : 'false',
+        security: conn.security || 'any',
+        width: String(width || '1280'),
+        height: String(height || '800'),
+        dpi: '96',
+        'resize-method': 'display-update',
+        'color-depth': String(conn.color_depth || '16'),
+        'enable-drive': 'true',
+        'drive-path': userDrivePathForGuacd(req.session.userId),
+        'create-drive-path': 'true',
+        'drive-name': 'Shared Drive',
+        'disable-download': 'false',
+        'disable-upload': 'false',
+        'enable-clipboard': 'true',
+      };
+      // Precedence, highest first: credentials typed into the one-time
+      // connect prompt (never saved anywhere, used only for this single
+      // connection attempt) -> the connection's own saved values -> the
+      // user's centrally-saved defaults.
+      const defaults = getDefaultCredentials(req.session.userId);
+      effectiveUsername = adHocUsername || conn.username || defaults.username;
+      effectivePassword = adHocPassword || (conn.password ? decrypt(conn.password) : defaults.password);
+      const effectiveDomain = adHocDomain || conn.domain || defaults.netbios_domain;
+      if (effectiveDomain) settings.domain = effectiveDomain;
+    }
 
     if (effectiveUsername) settings.username = effectiveUsername;
     if (effectivePassword) settings.password = effectivePassword;
-    if (effectiveDomain) settings.domain = effectiveDomain;
 
     // Extra metadata alongside `connection` - guacamole-lite only reads
     // known keys off the decrypted payload and ignores the rest, so this
@@ -414,7 +446,7 @@ router.post('/:id/token', (req, res) => {
     // .connectionSettings in the server's 'open'/'close' event handlers,
     // letting us track active sessions without a separate lookup.
     const token = encryptGuacToken({
-      connection: { type: 'rdp', settings },
+      connection: { type: protocol, settings },
       user_id: req.session.userId,
       username: req.session.username,
       connection_id: conn.id,

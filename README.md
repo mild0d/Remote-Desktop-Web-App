@@ -721,6 +721,34 @@ account at all times.
 admin accounts stay admins, and everyone else stays a regular user,
 automatically. There's no separate migration step or file to edit.
 
+## SSH connections
+
+Alongside RDP, connections can also be set to **SSH** - pick it from the
+Protocol dropdown when adding or editing a connection. The fields that
+don't apply to SSH (domain, security mode, color depth, certificate
+validation) hide themselves automatically once it's selected, and the
+port field defaults to 22 instead of 3389.
+
+Only password authentication is supported for now - no private key
+upload yet. If a specific SSH connection has no saved password, [the
+same connect-time prompt used for RDP](#connecting-without-saved-credentials)
+appears instead, asking for one just for that session.
+
+One deliberate difference from RDP: SSH connections never fall back to
+your account's saved default credentials in **⚙️ Settings**, even if
+you have some configured. Those are explicitly your *RDP* defaults - for
+most real setups, an SSH box's login has nothing to do with a Windows
+admin account, so silently reusing it here would connect with the wrong
+identity instead of clearly asking for the right one.
+
+Everything else works the same as RDP - the same tabs, the same
+fullscreen mode, the same drag-to-reorder - since the underlying
+`guacd`/Guacamole stack this app is built on natively speaks SSH just as
+fluently as RDP; an SSH session is just Guacamole rendering a terminal
+onto the same canvas instead of a Windows desktop. The one exception is
+Ctrl+Alt+Del, which hides itself for SSH sessions since it's a
+Windows-specific concept with no meaning in a terminal.
+
 ## Shared drive uploads
 
 Uploading a large file to the shared drive (📁 in a session) shows a

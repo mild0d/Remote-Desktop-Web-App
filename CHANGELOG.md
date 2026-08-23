@@ -7,6 +7,27 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.12.0] - 2026-08-23
+
+### Added
+- SSH connections, alongside RDP - pick it from a new Protocol dropdown
+  when adding or editing a connection. Password authentication only for
+  now, no private key support yet. RDP-specific fields (domain, security
+  mode, color depth, certificate validation) hide themselves
+  automatically when SSH is selected, and the port defaults to 22
+  instead of 3389. The connect-time credential prompt and Ctrl+Alt+Del
+  button both adapt correctly per session protocol.
+- Deliberately, SSH connections never fall back to the account's saved
+  default credentials in ⚙️ Settings, even if some are configured -
+  those are explicitly the account's *RDP* defaults, an unrelated
+  identity for most real setups. Confirmed directly: generated a real
+  session token for an SSH connection with an RDP default password set
+  on the account, and verified the decrypted token correctly has no
+  credentials at all rather than silently reusing the RDP default.
+- Existing connections are entirely unaffected and need no changes -
+  they're correctly treated as RDP, exactly as before this feature
+  existed, whether or not they have an explicit protocol saved.
+
 ## [1.11.2] - 2026-08-23
 
 ### Fixed

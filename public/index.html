@@ -389,6 +389,13 @@
           <input id="f-name" class="form-control" required />
         </div>
         <div class="mb-3">
+          <label class="form-label">Protocol</label>
+          <select id="f-protocol" class="form-select">
+            <option value="rdp">RDP</option>
+            <option value="ssh">SSH</option>
+          </select>
+        </div>
+        <div class="mb-3">
           <label class="form-label">Icon</label>
           <select id="f-icon" class="form-select">
             <option value="🖥️">🖥️ Workstation</option>
@@ -405,6 +412,7 @@
             <option value="🧪">🧪 Lab / test</option>
             <option value="⚙️">⚙️ Utility / service</option>
             <option value="🔒">🔒 Restricted / locked down</option>
+            <option value="⌨️">⌨️ Terminal / Linux host</option>
           </select>
         </div>
         <div class="mb-3">
@@ -416,9 +424,11 @@
           <label class="form-label">Port</label>
           <input id="f-port" class="form-control" value="3389" />
         </div>
-        <div class="mb-3">
-          <label class="form-label">Domain</label>
-          <input id="f-domain" class="form-control" placeholder="Leave blank to use your default domain" />
+        <div id="rdp-only-fields">
+          <div class="mb-3">
+            <label class="form-label">Domain</label>
+            <input id="f-domain" class="form-control" placeholder="Leave blank to use your default domain" />
+          </div>
         </div>
         <div class="mb-3">
           <label class="form-label">Username</label>
@@ -432,28 +442,30 @@
             <input class="form-check-input" type="checkbox" id="f-clear-password" />
             <label class="form-check-label small" for="f-clear-password">Clear the saved password (use my default credentials instead)</label>
           </div>
-          <div class="form-text">Set your default username/password once via the ⚙️ Settings button - connections without their own credentials will use those automatically.</div>
+          <div class="form-text" id="f-password-hint">Set your default username/password once via the ⚙️ Settings button - connections without their own credentials will use those automatically.</div>
         </div>
-        <div class="mb-3">
-          <label class="form-label">Security mode</label>
-          <select id="f-security" class="form-select">
-            <option value="any">Any (negotiate)</option>
-            <option value="nla">NLA</option>
-            <option value="tls">TLS</option>
-            <option value="rdp">RDP legacy</option>
-          </select>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Color depth (lower = better compatibility with some servers, e.g. black-screen-after-login issues)</label>
-          <select id="f-color-depth" class="form-select">
-            <option value="16">16-bit (best compatibility)</option>
-            <option value="24">24-bit</option>
-            <option value="32">32-bit (best quality)</option>
-          </select>
-        </div>
-        <div class="form-check mb-3">
-          <input type="checkbox" class="form-check-input" id="f-ignore-cert" checked />
-          <label class="form-check-label" for="f-ignore-cert">Ignore server certificate errors</label>
+        <div id="rdp-only-fields-2">
+          <div class="mb-3">
+            <label class="form-label">Security mode</label>
+            <select id="f-security" class="form-select">
+              <option value="any">Any (negotiate)</option>
+              <option value="nla">NLA</option>
+              <option value="tls">TLS</option>
+              <option value="rdp">RDP legacy</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Color depth (lower = better compatibility with some servers, e.g. black-screen-after-login issues)</label>
+            <select id="f-color-depth" class="form-select">
+              <option value="16">16-bit (best compatibility)</option>
+              <option value="24">24-bit</option>
+              <option value="32">32-bit (best quality)</option>
+            </select>
+          </div>
+          <div class="form-check mb-3">
+            <input type="checkbox" class="form-check-input" id="f-ignore-cert" checked />
+            <label class="form-check-label" for="f-ignore-cert">Ignore server certificate errors</label>
+          </div>
         </div>
         <div class="mb-3">
           <label class="form-label">Tags</label>
@@ -1400,10 +1412,31 @@ document.getElementById('ad-browse-import-btn').addEventListener('click', async 
   }
 });
 
+// Shows/hides the fields that only apply to RDP - SSH doesn't use a
+// domain, a security mode, a color depth, or certificate validation.
+function applyProtocolFieldVisibility() {
+  const isSSH = document.getElementById('f-protocol').value === 'ssh';
+  document.getElementById('rdp-only-fields').classList.toggle('d-none', isSSH);
+  document.getElementById('rdp-only-fields-2').classList.toggle('d-none', isSSH);
+  document.getElementById('f-password-hint').classList.toggle('d-none', isSSH);
+}
+
+document.getElementById('f-protocol').addEventListener('change', (e) => {
+  applyProtocolFieldVisibility();
+  // Only overwrites the port if it still holds the *other* protocol's
+  // default - never touches a value the person actually typed themselves.
+  const portInput = document.getElementById('f-port');
+  const isSSH = e.target.value === 'ssh';
+  if (isSSH && portInput.value === '3389') portInput.value = '22';
+  if (!isSSH && portInput.value === '22') portInput.value = '3389';
+});
+
 function openModal(existing) {
   form.reset();
   document.getElementById('conn-id').value = existing ? existing.id : '';
   document.getElementById('f-name').value = existing ? existing.name : '';
+  document.getElementById('f-protocol').value = existing ? existing.protocol || 'rdp' : 'rdp';
+  applyProtocolFieldVisibility();
   document.getElementById('f-icon').value = existing ? existing.icon || '🖥️' : '🖥️';
   document.getElementById('f-hostname').value = existing ? existing.hostname : '';
   document.getElementById('f-port').value = existing ? existing.port : '3389';
@@ -1412,15 +1445,24 @@ function openModal(existing) {
   document.getElementById('f-password').value = '';
   const passwordStatusEl = document.getElementById('f-password-status');
   const passwordInputEl = document.getElementById('f-password');
+  const passwordHintEl = document.getElementById('f-password-hint');
   const clearPasswordWrap = document.getElementById('f-clear-password-wrap');
   document.getElementById('f-clear-password').checked = false;
+  const isSSH = document.getElementById('f-protocol').value === 'ssh';
+  // SSH deliberately doesn't fall back to the account's saved default
+  // credentials - those are explicitly the "Default RDP credentials",
+  // a different, unrelated identity for most real setups - so the hint
+  // pointing at Settings would be actively misleading here.
+  passwordHintEl.classList.toggle('d-none', isSSH);
   if (existing && existing.hasPassword) {
     passwordInputEl.placeholder = '•••••••• (saved - leave blank to keep it)';
     passwordStatusEl.textContent = '🔒 A password is saved for this connection.';
     clearPasswordWrap.classList.remove('d-none');
   } else if (existing) {
-    passwordInputEl.placeholder = 'No password saved - using your default credentials';
-    passwordStatusEl.textContent = 'No password is saved for this connection - it currently uses your default credentials.';
+    passwordInputEl.placeholder = isSSH ? 'No password saved - you\'ll be prompted at connect time' : 'No password saved - using your default credentials';
+    passwordStatusEl.textContent = isSSH
+      ? 'No password is saved for this connection - you\'ll be prompted for one each time you connect.'
+      : 'No password is saved for this connection - it currently uses your default credentials.';
     clearPasswordWrap.classList.add('d-none');
   } else {
     passwordInputEl.placeholder = 'Leave blank to keep existing (or use default if unset)';
@@ -1849,9 +1891,10 @@ form.addEventListener('submit', async (e) => {
   const id = document.getElementById('conn-id').value;
   const payload = {
     name: document.getElementById('f-name').value,
+    protocol: document.getElementById('f-protocol').value,
     icon: document.getElementById('f-icon').value,
     hostname: resolveHostname(document.getElementById('f-hostname').value),
-    port: parseInt(document.getElementById('f-port').value, 10) || 3389,
+    port: parseInt(document.getElementById('f-port').value, 10) || undefined, // the backend applies a protocol-appropriate default (22 for ssh, 3389 for rdp) if this is left out
     domain: document.getElementById('f-domain').value,
     username: document.getElementById('f-username').value,
     password: document.getElementById('f-password').value,
@@ -1956,6 +1999,9 @@ function showView(key) {
       requestResize(session);
       updateStatusDisplay(key);
       clipboardSink.focus();
+      // Ctrl+Alt+Del is a Windows/RDP concept with no meaning in an SSH
+      // terminal session.
+      document.getElementById('ctrl-alt-del-btn').classList.toggle('d-none', session.protocol === 'ssh');
     }
   } else {
     // Leaving onkeydown/onkeyup unset (their real default is null) makes
@@ -2110,6 +2156,13 @@ document.addEventListener('keydown', (e) => {
   const session = sessions.get(activeKey);
   if (!session || !session.client) return;
 
+  // The whole simulated-paste approach below exists specifically because
+  // that's how Windows/RDP expects to receive a paste - it doesn't apply
+  // to an SSH terminal, which just wants Ctrl+V forwarded as a normal
+  // keystroke like any other. Guacamole's own listener handles that
+  // correctly on its own; nothing to intercept here for SSH.
+  if (session.protocol === 'ssh') return;
+
   e.preventDefault();
   e.stopPropagation();
 
@@ -2140,14 +2193,19 @@ document.addEventListener('keydown', (e) => {
 }, true); // true = capture phase, see comment above
 
 // True if this connection has neither its own saved username+password nor
-// anything usable from the account's saved defaults - meaning the RDP
+// anything usable from the account's saved defaults - meaning the
 // session would otherwise start with no credentials at all. Checked
 // before connecting so the person can type them in for just this one
 // session, rather than discovering the gap only once the remote
 // machine's own login screen shows up inside the session.
 function needsCredentialPrompt(conn) {
-  const hasUsername = Boolean(conn.username) || Boolean(defaultCredentialsStatus.username);
-  const hasPassword = Boolean(conn.hasPassword) || Boolean(defaultCredentialsStatus.hasPassword);
+  // SSH deliberately never falls back to the account's saved defaults,
+  // matching the same rule enforced server-side in the token route -
+  // those are explicitly the "Default RDP credentials", a different,
+  // unrelated identity for most real setups.
+  const isSSH = conn.protocol === 'ssh';
+  const hasUsername = Boolean(conn.username) || (!isSSH && Boolean(defaultCredentialsStatus.username));
+  const hasPassword = Boolean(conn.hasPassword) || (!isSSH && Boolean(defaultCredentialsStatus.hasPassword));
   return !hasUsername || !hasPassword;
 }
 
@@ -2188,6 +2246,9 @@ async function openOrFocusSession(id, name, adHocCredentials) {
     return;
   }
 
+  const conn = currentConns.find((c) => String(c.id) === key);
+  const protocol = (conn && conn.protocol) || 'rdp';
+
   const tabEl = document.createElement('button');
   tabEl.className = 'tab-btn';
   tabEl.draggable = true;
@@ -2217,7 +2278,7 @@ async function openOrFocusSession(id, name, adHocCredentials) {
 
   const displayArea = paneEl.querySelector('.display-area');
 
-  sessions.set(key, { name, client: null, paneEl, tabEl, displayArea, state: 1, statusText: 'Connecting…' });
+  sessions.set(key, { name, protocol, client: null, paneEl, tabEl, displayArea, state: 1, statusText: 'Connecting…' });
 
   // Switch to it now (while connecting) so the pane is laid out and its
   // real size can be measured before we request a matching RDP resolution.
