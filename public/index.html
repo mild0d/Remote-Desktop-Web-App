@@ -2099,19 +2099,27 @@ function enableKeyboardForwarding(session) {
 }
 
 function disableKeyboardForwarding() {
-  // Deliberately no-op functions, never null. Guacamole's own keyboard
-  // object can have an in-flight internal timer already running for a
-  // modifier key (Control/Shift) that was pressed physically before this
-  // function ever ran - those keydowns aren't paste shortcuts themselves,
-  // so they're never intercepted here, and reach Guacamole's own listener
-  // completely normally. When that timer later fires and tries to call
-  // onkeyup, null crashes it outright (confirmed directly via a real
-  // stack trace: "t.onkeyup is not a function") - which corrupts
-  // Guacamole's internal keyboard state for the rest of the session,
-  // explaining why paste worked once and then silently stopped working
-  // for good afterward. A no-op absorbs that harmlessly instead.
-  sharedKeyboard.onkeydown = () => {};
-  sharedKeyboard.onkeyup = () => {};
+  // Releases any key Guacamole's own listener currently believes is held
+  // - notably a modifier like Control/Shift from a paste shortcut, which
+  // physically gets pressed before "v" and is never intercepted here,
+  // reaching Guacamole's listener completely normally. This matters
+  // because it happens synchronously, firing onkeyup immediately for
+  // anything still held - so by the time onkeydown/onkeyup are nulled
+  // below, there's no longer an in-flight internal timer left that could
+  // fire later and try to call onkeyup after it's gone.
+  sharedKeyboard.reset();
+  // Must be null, not e.g. a no-op function - confirmed directly via a
+  // real bug report. Guacamole's own listener checks the truthiness of
+  // onkeydown/onkeyup to decide whether to process a keystroke at all,
+  // including calling preventDefault() - null is what makes it a
+  // complete no-op. A no-op function is still truthy, which kept
+  // Guacamole intercepting and preventing every keystroke on the entire
+  // page (not just within a session) from the first time this function
+  // ever ran - explaining a real report of typing breaking permanently
+  // page-wide after pasting into a form, or after opening and leaving a
+  // session once.
+  sharedKeyboard.onkeydown = null;
+  sharedKeyboard.onkeyup = null;
 }
 
 function sendTextToActiveSession(text) {
