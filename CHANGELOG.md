@@ -7,6 +7,46 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.14.2] - 2026-08-26
+
+### Fixed
+- On the Windows XP theme, the "Connected" status text was too light a
+  green to read clearly against the blue toolbar gradient. Darkened the
+  theme's success green - this also improves every other green success
+  indicator app-wide (2FA confirmation, reachability dots, AD/SSO
+  success messages), not just this one spot.
+- On the Windows XP theme, hovering over a background session tab made
+  its name unreadable - white text on a white hover background. Cause:
+  a genuine CSS specificity tie between the theme's "tabs are white
+  text" rule and the shared hover rule that should have switched the
+  text to black; with equal specificity, whichever rule happened to be
+  written later in the stylesheet won, which was the wrong one. Fixed
+  with a hover-specific rule for this theme that has strictly higher
+  specificity than both, so it wins unconditionally rather than
+  depending on rule order.
+
+## [1.14.1] - 2026-08-23
+
+### Fixed
+- A real regression, introduced by the 1.12.3 fix for the SSH paste
+  crash: text fields across the whole app (search, notes, anything)
+  would silently stop accepting input after pasting into a form, or
+  after opening and leaving a session once - fixable only by reloading
+  the page. Cause: that earlier fix changed disableKeyboardForwarding()
+  to set Guacamole's keyboard handlers to empty no-op functions instead
+  of null, to stop a crash. But Guacamole's own listener checks whether
+  those handlers are truthy at all to decide whether to intercept a
+  keystroke in the first place - an empty function is still truthy, so
+  from the first time that function ever ran, Guacamole kept
+  intercepting every keystroke on the entire page, not just within a
+  session. Fixed properly this time: onkeydown/onkeyup are null again
+  (restoring the original, correct no-op behavior), and the original
+  crash is now prevented differently - by calling Guacamole's own
+  keyboard.reset() first, which synchronously releases any modifier key
+  it still believes is held (e.g. Control/Shift from a paste shortcut)
+  before nulling the handlers, so there's no longer an in-flight timer
+  left that could fire late and crash.
+
 ## [1.14.0] - 2026-08-23
 
 ### Added

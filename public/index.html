@@ -256,6 +256,7 @@
     --bs-border-color: #0054e3;
     --bs-border-radius: 6px; --bs-border-radius-sm: 4px; --bs-border-radius-lg: 8px;
     --bs-link-color: #0054e3;
+    --bs-success: #0a6b2d; /* Bootstrap's default success green isn't dark enough to read clearly against the blue toolbar gradient - this affects every green success indicator app-wide, not just the connected-session status text (2FA confirmation, reachability dots, AD/SSO success messages) */
     font-family: Tahoma, "MS Sans Serif", sans-serif;
   }
   [data-theme="winxp"] .card { border-radius: 8px; border: 1px solid #0054e3; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden; }
@@ -281,6 +282,7 @@
   [data-theme="winxp"] .form-control, [data-theme="winxp"] .form-select { border-radius: 3px; border-color: #7f9db9; }
   [data-theme="winxp"] #tab-bar { background: linear-gradient(180deg, #0058d8 0%, #3993ff 100%); }
   [data-theme="winxp"] .tab-btn { color: #fff; }
+  [data-theme="winxp"] .tab-btn:hover { color: #000; } /* without this, the rule above (equal specificity, later in the stylesheet) wins the tie against .tab-btn:hover's own color change, leaving white text on the hover state's white background - invisible */
   [data-theme="winxp"] .tab-btn.active-tab { background: #ece9d8; color: #000; box-shadow: none; }
 </style>
 </head>
