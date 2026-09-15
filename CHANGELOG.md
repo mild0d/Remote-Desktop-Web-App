@@ -7,6 +7,26 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.15.1] - 2026-09-15
+
+### Fixed
+- SSH paste (Ctrl+Shift+V) had stopped reliably working. Ruled out the
+  clipboard sync itself through direct guacd log inspection and a
+  targeted acknowledgment check - the text genuinely reaches the remote
+  correctly, confirmed by the fact that manually right-clicking to
+  paste (standard xterm-family mouse-based paste) worked reliably every
+  time. The actual gap: the Shift+Insert keystroke simulation used to
+  trigger the paste doesn't reliably register with this guacd version's
+  SSH terminal emulation, even though the clipboard content it would
+  paste is already there and correct.
+  Fixed by simulating a right-click instead of a keystroke - the exact
+  mechanism already confirmed to work. This isn't a Guacamole-specific
+  paste feature; it's an ordinary mouse event forwarded to the remote,
+  which the SSH terminal then interprets as "paste from clipboard" the
+  same way any real physical right-click would. Verified the simulated
+  event produces byte-identical protocol messages to a real right-click
+  before shipping this.
+
 ## [1.15.0] - 2026-09-15
 
 ### Fixed

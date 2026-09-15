@@ -2206,20 +2206,31 @@ document.addEventListener('keydown', (e) => {
     // confirmed" signal available to wait on instead.
     setTimeout(() => {
       if (isSSH) {
-        // Forwarding a literal Ctrl+V to an SSH terminal doesn't paste
-        // anything - in a standard shell, Ctrl+V is traditionally an
-        // entirely different readline control character ("insert the
-        // next character literally"), not a paste shortcut at all.
-        // Shift+Insert is the actual standard paste shortcut across the
-        // xterm/Linux terminal family, and what Guacamole's own SSH
-        // handling recognizes for pasting from its synced clipboard.
-        // Keysyms confirmed directly against guacamole-common-js's own
-        // keyboard mapping table (Shift: 0xFFE1, Insert: 0xFF63) rather
-        // than assumed from memory.
-        session.client.sendKeyEvent(1, 0xffe1); // Shift_L down
-        session.client.sendKeyEvent(1, 0xff63); // Insert down
-        session.client.sendKeyEvent(0, 0xff63); // Insert up
-        session.client.sendKeyEvent(0, 0xffe1); // Shift_L up
+        // Shift+Insert (the standard xterm-family paste shortcut in most
+        // terminal emulators) does NOT reliably trigger a paste in this
+        // guacd version's SSH terminal emulation - confirmed directly:
+        // the clipboard sync itself succeeds (proven by a real right-click
+        // correctly pasting the current clipboard content), but the
+        // simulated Shift+Insert keystroke sequence alone does not
+        // trigger the paste action on guacd's side.
+        //
+        // A right-click is standard xterm-family mouse-based paste
+        // (right or middle click pastes from the current clipboard/
+        // selection) - Guacamole simply forwards this as an ordinary
+        // mouse event to the remote, the same as it would from a real
+        // physical right-click; it's not a Guacamole-specific paste
+        // feature, and doesn't depend on any particular keyboard
+        // shortcut being recognized by guacd's terminal emulation at
+        // all. Simulating that exact mouse event here reuses the same
+        // mechanism already confirmed to work reliably, rather than a
+        // keyboard shortcut this particular guacd version doesn't
+        // appear to honor for SSH sessions. Position doesn't matter for
+        // this specific action - terminal paste happens at the current
+        // cursor position, not the click location.
+        const mouseState = new Guacamole.Mouse.State({ x: 1, y: 1, left: false, middle: false, right: true, up: false, down: false });
+        session.client.sendMouseState(mouseState);
+        const mouseStateUp = new Guacamole.Mouse.State({ x: 1, y: 1, left: false, middle: false, right: false, up: false, down: false });
+        session.client.sendMouseState(mouseStateUp);
       } else {
         session.client.sendKeyEvent(1, 0xffe3); // Control_L down
         session.client.sendKeyEvent(1, 0x0076); // v down
