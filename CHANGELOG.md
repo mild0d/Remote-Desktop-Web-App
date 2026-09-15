@@ -7,6 +7,58 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.14.4] - 2026-09-15
+
+### Fixed
+- The double-paste fix in 1.14.3 addressed keydown-based forwarding, but
+  was incomplete - double-pastes could still occur through a second,
+  entirely separate mechanism inside Guacamole's own library, confirmed
+  directly in its source: it also listens for the native "input" event
+  on the document (which fires when an editable element's actual content
+  changes) and forwards whatever text appears through a different method
+  than the keydown-based path. The app's hidden clipboard-sink textarea
+  stays focused for the whole duration of an active session, so the
+  browser's own native paste action was still inserting the clipboard
+  content directly into it - regardless of anything done to the keydown
+  event - independently triggering this second forwarding path and
+  producing a second paste. Fixed by preventing the native paste event's
+  default action during an active session, which stops the text from
+  ever being inserted in the first place, so this second pathway's own
+  input event never fires at all for that paste. Confirmed directly:
+  the paste event is correctly blocked during an active session, and
+  correctly left untouched everywhere else (search bar, notes field,
+  and anywhere else pasting is expected to work normally).
+
+## [1.14.3] - 2026-09-15
+
+### Fixed
+- Pasting into an RDP session would occasionally paste the same content
+  twice in a row. Confirmed the actual cause with captured logs showing
+  the real sequence sent to the remote: the user's genuine physical
+  Ctrl+V, forwarded normally (with a realistic ~100ms human gap between
+  Control and V), immediately followed ~200ms later by this app's own
+  simulated Ctrl+V sequence (all four key events within under half a
+  millisecond of each other) - two real, separate paste triggers landing
+  on the remote in quick succession.
+  Two distinct bugs combined to cause this, both now fixed:
+  1. Guacamole's own keyboard-forwarding listener was being created
+     (and so registering its own capture-phase listener) before this
+     app's paste-handling listener - meaning Guacamole always saw and
+     forwarded the physical keypress first, before this app's own
+     handler even got a chance to intervene. Fixed by registering the
+     paste handler earlier, before Guacamole's listener is created.
+  2. Even with the correct order, the paste handler was calling
+     stopPropagation() rather than stopImmediatePropagation() -
+     stopPropagation() only stops an event from reaching a *different*
+     element in the DOM tree; it does nothing to stop *other listeners
+     on that same element* from still running afterward, and
+     Guacamole's listener is registered on this exact same document
+     element. Confirmed directly with an isolated test: a second
+     capture-phase listener on the same element still fired after
+     stopPropagation() was called, and was only genuinely blocked by
+     stopImmediatePropagation(). Both fixes were necessary - neither
+     alone would have fully resolved this.
+
 ## [1.14.2] - 2026-08-26
 
 ### Fixed

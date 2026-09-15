@@ -2089,6 +2089,151 @@ function closeSession(key) {
 // showView). Guacamole's listener treats a null handler as a complete
 // no-op, so leaving it null while on the list/modal view guarantees normal
 // typing is never intercepted.
+// A second, entirely separate forwarding mechanism inside Guacamole's own
+// library, independent of keydown entirely: it also listens for the
+// native "input" event on this same document (confirmed directly in its
+// own source), which fires when an editable element's content actually
+// changes - and forwards whatever text appears via a completely
+// different method (keyboard.type()) than the keydown-based one below.
+// The hidden clipboard-sink textarea stays focused for the whole
+// duration of an active session, so the browser's own native paste
+// action was still inserting the clipboard content directly into it -
+// regardless of anything done to the keydown event - which fired that
+// separate "input" event and independently forwarded the same text a
+// second time. Preventing the native paste event's default action here
+// stops the text from ever being inserted in the first place, so that
+// second pathway's own "input" event never fires at all for this paste.
+document.addEventListener('paste', (e) => {
+  if (activeKey === 'list') return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+}, true);
+
+// Registered here, deliberately BEFORE sharedKeyboard is created below -
+// this is the actual fix for a real, confirmed double-paste bug, not
+// just a style choice. Two capture-phase listeners on the SAME element
+// (document, in this case) fire in REGISTRATION order, not some
+// capture-always-wins rule - an earlier version of this comment claimed
+// capture phase always runs first regardless of registration order,
+// which is only true when comparing capture vs bubble; it does not hold
+// between two capture-phase listeners on the same element. Guacamole's
+// own Keyboard class also listens in capture phase, and if it's created
+// (and so registers its listener) before this one, its forwarding always
+// runs FIRST, forwarding the user's real physical Ctrl+V to the remote
+// before this handler's preventDefault()/stopPropagation() calls ever
+// get a chance to matter - confirmed directly via captured logs: a
+// physical keypress (with a realistic ~100ms human gap between Control
+// and V) fully forwarded to the remote, followed ~200ms later by this
+// handler's own simulated sequence (all four events within under half a
+// millisecond of each other) - two genuine, separate paste triggers
+// landing on the remote in a row.
+//
+// This used to only intercept the single 'V' keydown event, then
+// manually replay a full Ctrl+V sequence afterward - but that left the
+// Control keydown that precedes it, and the V/Control keyup events that
+// follow it, all still being forwarded normally via the untouched
+// sharedKeyboard listener. That meant the remote machine could receive
+// an overlapping, inconsistent mix of the user's own real key signals
+// AND this handler's manually-simulated ones at the same time, which is
+// what was actually causing occasional double-pastes. Real Windows RDP
+// never has this problem, because it treats the keyboard and the
+// clipboard as one single native operation, not two independently
+// racing browser-side mechanisms.
+//
+// The fix: suppress ALL keyboard forwarding for the entire duration of
+// handling this paste - not just the one keydown - so nothing from the
+// user's real keypresses can reach the remote session while this is in
+// progress, then hand the remote machine one single, clean, self-
+// contained Ctrl+V sequence, and only then resume normal forwarding.
+document.addEventListener('keydown', (e) => {
+  if (activeKey === 'list') return;
+  const isPasteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'v';
+  if (!isPasteShortcut) return;
+
+  // Holding the keys down even slightly longer than instantaneous -
+  // completely normal, not a mistake - triggers the browser's own native
+  // key-repeat, firing additional keydown events for 'v' every ~30-50ms
+  // for as long as it's held, with ctrlKey still true on each one. Without
+  // this check, every single repeat re-triggered this entire handler
+  // independently, each eventually sending its own full simulated Ctrl+V
+  // sequence below - multiple overlapping paste sequences landing on the
+  // remote in quick succession, which is what actually caused the
+  // intermittent burst of repeated characters. e.repeat is true
+  // specifically (and only) on these auto-repeated events, never on the
+  // one genuine keydown that starts a real press-and-hold.
+  if (e.repeat) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
+
+  const session = sessions.get(activeKey);
+  if (!session || !session.client) return;
+
+  e.preventDefault();
+  // stopImmediatePropagation(), not stopPropagation() - confirmed
+  // directly to be the actual, complete fix for the double-paste bug.
+  // stopPropagation() only ever stops an event from moving to a
+  // DIFFERENT element in the DOM tree; it does nothing to stop OTHER
+  // listeners registered on this exact same element (document) from
+  // still running afterward - and Guacamole's own keyboard listener is
+  // registered on this same document element. Moving this handler's
+  // registration to run before Guacamole's (see the comment above
+  // sharedKeyboard's creation) was necessary but not sufficient on its
+  // own - Guacamole's listener would still have fired right after this
+  // one even with the correct order, forwarding the user's real
+  // physical Ctrl+V to the remote in addition to this handler's own
+  // simulated sequence below. That combination - one real, physical
+  // paste plus one simulated one landing on the remote moments apart -
+  // is what was actually causing genuine double-pastes, confirmed
+  // directly via captured logs showing exactly that pattern.
+  e.stopImmediatePropagation();
+
+  // Stops the real V-up and Control-up (and Control-down, if it hasn't
+  // fired yet) from being forwarded normally while this is in progress -
+  // resumed once the manual sequence below has been sent.
+  disableKeyboardForwarding();
+
+  const isSSH = session.protocol === 'ssh';
+
+  navigator.clipboard.readText().then((text) => {
+    sendTextToActiveSession(text); // updates the remote session's clipboard buffer first
+    // Pushing the clipboard update and simulating the keypress in the
+    // right JS execution order isn't enough on its own - the update
+    // still has to travel browser -> guacd -> the remote session's own
+    // clipboard, which takes real time. This delay is a pragmatic buffer
+    // for that round-trip - there's no explicit "clipboard update
+    // confirmed" signal available to wait on instead.
+    setTimeout(() => {
+      if (isSSH) {
+        // Forwarding a literal Ctrl+V to an SSH terminal doesn't paste
+        // anything - in a standard shell, Ctrl+V is traditionally an
+        // entirely different readline control character ("insert the
+        // next character literally"), not a paste shortcut at all.
+        // Shift+Insert is the actual standard paste shortcut across the
+        // xterm/Linux terminal family, and what Guacamole's own SSH
+        // handling recognizes for pasting from its synced clipboard.
+        // Keysyms confirmed directly against guacamole-common-js's own
+        // keyboard mapping table (Shift: 0xFFE1, Insert: 0xFF63) rather
+        // than assumed from memory.
+        session.client.sendKeyEvent(1, 0xffe1); // Shift_L down
+        session.client.sendKeyEvent(1, 0xff63); // Insert down
+        session.client.sendKeyEvent(0, 0xff63); // Insert up
+        session.client.sendKeyEvent(0, 0xffe1); // Shift_L up
+      } else {
+        session.client.sendKeyEvent(1, 0xffe3); // Control_L down
+        session.client.sendKeyEvent(1, 0x0076); // v down
+        session.client.sendKeyEvent(0, 0x0076); // v up
+        session.client.sendKeyEvent(0, 0xffe3); // Control_L up
+      }
+      enableKeyboardForwarding(session); // resume normal typing
+    }, 200);
+  }).catch((err) => {
+    console.warn('[clipboard] Could not read local clipboard (permission denied/dismissed?):', err);
+    enableKeyboardForwarding(session); // don't leave forwarding disabled if the read itself failed
+  });
+}, true); // true = capture phase, see comment above
+
 const sharedKeyboard = new Guacamole.Keyboard(document);
 
 function enableKeyboardForwarding(session) {
@@ -2138,102 +2283,6 @@ function sendTextToActiveSession(text) {
   writer.sendText(text);
   writer.sendEnd();
 }
-
-// Primary mechanism: detect Ctrl+V directly at the document level, in the
-// CAPTURE phase specifically - Guacamole.Keyboard's own internal listener
-// (which forwards literal keystrokes to the remote session) uses the
-// default bubble phase, and capture-phase listeners always run first
-// regardless of registration order.
-//
-// This used to only intercept the single 'V' keydown event, then
-// manually replay a full Ctrl+V sequence afterward - but that left the
-// Control keydown that precedes it, and the V/Control keyup events that
-// follow it, all still being forwarded normally via the untouched
-// sharedKeyboard listener. That meant the remote machine could receive
-// an overlapping, inconsistent mix of the user's own real key signals
-// AND this handler's manually-simulated ones at the same time, which is
-// what was actually causing occasional double-pastes. Real Windows RDP
-// never has this problem, because it treats the keyboard and the
-// clipboard as one single native operation, not two independently
-// racing browser-side mechanisms.
-//
-// The fix: suppress ALL keyboard forwarding for the entire duration of
-// handling this paste - not just the one keydown - so nothing from the
-// user's real keypresses can reach the remote session while this is in
-// progress, then hand the remote machine one single, clean, self-
-// contained Ctrl+V sequence, and only then resume normal forwarding.
-document.addEventListener('keydown', (e) => {
-  if (activeKey === 'list') return;
-  const isPasteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'v';
-  if (!isPasteShortcut) return;
-
-  // Holding the keys down even slightly longer than instantaneous -
-  // completely normal, not a mistake - triggers the browser's own native
-  // key-repeat, firing additional keydown events for 'v' every ~30-50ms
-  // for as long as it's held, with ctrlKey still true on each one. Without
-  // this check, every single repeat re-triggered this entire handler
-  // independently, each eventually sending its own full simulated Ctrl+V
-  // sequence below - multiple overlapping paste sequences landing on the
-  // remote in quick succession, which is what actually caused the
-  // intermittent burst of repeated characters. e.repeat is true
-  // specifically (and only) on these auto-repeated events, never on the
-  // one genuine keydown that starts a real press-and-hold.
-  if (e.repeat) {
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
-
-  const session = sessions.get(activeKey);
-  if (!session || !session.client) return;
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  // Stops the real V-up and Control-up (and Control-down, if it hasn't
-  // fired yet) from being forwarded normally while this is in progress -
-  // resumed once the manual sequence below has been sent.
-  disableKeyboardForwarding();
-
-  const isSSH = session.protocol === 'ssh';
-
-  navigator.clipboard.readText().then((text) => {
-    sendTextToActiveSession(text); // updates the remote session's clipboard buffer first
-    // Pushing the clipboard update and simulating the keypress in the
-    // right JS execution order isn't enough on its own - the update
-    // still has to travel browser -> guacd -> the remote session's own
-    // clipboard, which takes real time. This delay is a pragmatic buffer
-    // for that round-trip - there's no explicit "clipboard update
-    // confirmed" signal available to wait on instead.
-    setTimeout(() => {
-      if (isSSH) {
-        // Forwarding a literal Ctrl+V to an SSH terminal doesn't paste
-        // anything - in a standard shell, Ctrl+V is traditionally an
-        // entirely different readline control character ("insert the
-        // next character literally"), not a paste shortcut at all.
-        // Shift+Insert is the actual standard paste shortcut across the
-        // xterm/Linux terminal family, and what Guacamole's own SSH
-        // handling recognizes for pasting from its synced clipboard.
-        // Keysyms confirmed directly against guacamole-common-js's own
-        // keyboard mapping table (Shift: 0xFFE1, Insert: 0xFF63) rather
-        // than assumed from memory.
-        session.client.sendKeyEvent(1, 0xffe1); // Shift_L down
-        session.client.sendKeyEvent(1, 0xff63); // Insert down
-        session.client.sendKeyEvent(0, 0xff63); // Insert up
-        session.client.sendKeyEvent(0, 0xffe1); // Shift_L up
-      } else {
-        session.client.sendKeyEvent(1, 0xffe3); // Control_L down
-        session.client.sendKeyEvent(1, 0x0076); // v down
-        session.client.sendKeyEvent(0, 0x0076); // v up
-        session.client.sendKeyEvent(0, 0xffe3); // Control_L up
-      }
-      enableKeyboardForwarding(session); // resume normal typing
-    }, 200);
-  }).catch((err) => {
-    console.warn('[clipboard] Could not read local clipboard (permission denied/dismissed?):', err);
-    enableKeyboardForwarding(session); // don't leave forwarding disabled if the read itself failed
-  });
-}, true); // true = capture phase, see comment above
 
 // True if this connection has neither its own saved username+password nor
 // anything usable from the account's saved defaults - meaning the
