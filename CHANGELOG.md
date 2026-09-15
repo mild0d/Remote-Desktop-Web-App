@@ -7,6 +7,42 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.15.0] - 2026-09-15
+
+### Fixed
+- The idle-timeout feature (⚙️ Settings → Session, added in 1.14.0) only
+  ever worked while the page was actually open and running - it's
+  client-side JavaScript that checks for inactivity every 15 seconds,
+  which simply can't run at all while a laptop is asleep or the browser
+  is closed. Separately, completely independent of that check, the
+  underlying session cookie itself had its own fixed 30-day expiration
+  regardless of activity - so overnight, neither mechanism actually did
+  anything, and the next morning's session was still valid. In short:
+  the idle-timeout setting was never actually enforced at the session
+  level, only ever caught while the tab happened to be open.
+- Fixed properly this time, at the session layer rather than relying on
+  client-side JS alone: the cookie's own expiration now matches each
+  account's saved idle-timeout preference, and rolls forward with every
+  request the browser actually makes (rather than being fixed once at
+  login) - both set at every point a session is established (login,
+  2FA verification, SSO, completing mandatory 2FA setup) and updated
+  immediately if the preference is changed mid-session. This makes the
+  cookie itself a genuine, server-enforced idle window that requires no
+  JavaScript to still be running to take effect - if the browser goes
+  quiet for that whole duration for any reason, the cookie expires on
+  its own. Confirmed directly: captured the actual Set-Cookie header at
+  login, after changing the preference mid-session, and on a routine,
+  unrelated request afterward, confirming the expiration is set
+  correctly, updates immediately, and genuinely rolls forward rather
+  than staying fixed.
+
+### Changed
+- Accounts that predate the idle-timeout feature (and so have never
+  saved a preference) now default to a 60-minute session, replacing the
+  previous flat 30-day cookie lifetime - a real behavior change worth
+  knowing about, though it only restores what the idle-timeout setting
+  was always supposed to enforce.
+
 ## [1.14.4] - 2026-09-15
 
 ### Fixed

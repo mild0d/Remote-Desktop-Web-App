@@ -238,6 +238,13 @@ router.post('/verify-2fa', authRateLimiter, (req, res) => {
     if (err) return res.status(500).json({ error: 'Failed to create session' });
     req.session.userId = user.id;
     req.session.username = user.username;
+    // Ties the cookie's own expiration to this account's idle-timeout
+    // preference - the actual fix for the cookie outliving the client-side
+    // JS check, which can't run at all while the browser is closed or the
+    // laptop is asleep. Combined with rolling:true above, this makes the
+    // cookie a genuine, server-enforced idle window instead of a fixed
+    // one that doesn't care whether anyone's actually using the page.
+    req.session.cookie.maxAge = getIdleTimeoutMinutes(user.id) * 60 * 1000;
     const response = { ok: true, username: user.username };
     if (usedRecoveryCode) {
       response.usedRecoveryCode = true;
@@ -342,6 +349,11 @@ router.post('/idle-timeout', (req, res) => {
   }
   try {
     setIdleTimeoutMinutes(req.session.userId, req.body && req.body.minutes);
+    // Applies to the cookie backing this session right now, not just
+    // future logins - otherwise changing this setting would silently
+    // have no effect on the server-enforced expiration until signing in
+    // again.
+    req.session.cookie.maxAge = getIdleTimeoutMinutes(req.session.userId) * 60 * 1000;
     res.json({ ok: true });
   } catch (err) {
     if (err.code === 'INVALID_IDLE_TIMEOUT') {
@@ -451,6 +463,7 @@ router.post('/2fa/confirm', (req, res) => {
       if (err) return res.status(500).json({ error: 'Failed to create session' });
       req.session.userId = user.id;
       req.session.username = user.username;
+      req.session.cookie.maxAge = getIdleTimeoutMinutes(user.id) * 60 * 1000; // see the fuller comment on this same line in /login above
       logLoginEvent({ username: user.username, success: true, reason: 'Login successful (2FA setup completed)', ip: req.ip });
       res.json({ ok: true, recoveryCodes });
     });
@@ -556,6 +569,7 @@ router.get('/sso/callback', async (req, res) => {
 
       req.session.userId = user.id;
       req.session.username = user.username;
+      req.session.cookie.maxAge = getIdleTimeoutMinutes(user.id) * 60 * 1000; // see the fuller comment on this same line in /login above
       logLoginEvent({ username: user.username, success: true, reason: 'Login successful (SSO)', ip: req.ip });
       res.redirect('/');
     });

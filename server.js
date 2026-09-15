@@ -69,8 +69,16 @@ app.use(
     secret: process.env.SESSION_SECRET || 'change-this-session-secret',
     resave: false,
     saveUninitialized: false,
+    // Extends the cookie's expiration on every request rather than
+    // fixing it once at login - this is what actually makes it a
+    // genuine idle-based expiration rather than a flat window regardless
+    // of activity. Set to each account's own configured idle-timeout
+    // value at login (see routes/auth.js) and whenever they change that
+    // setting; this default here only applies before either has ever
+    // run (e.g. mid-registration, before a full session exists yet).
+    rolling: true,
     cookie: {
-      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+      maxAge: 1000 * 60 * 60, // 1 hour - matches the idle-timeout feature's own default, not a long-lived fallback
       secure: true, // only sent over HTTPS, which is now the only mode this app serves
       sameSite: 'lax', // blocks cross-site POST/PUT/DELETE requests from ever carrying this cookie,
       // while still allowing normal same-site navigation - the standard recommended

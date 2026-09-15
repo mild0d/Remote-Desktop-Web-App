@@ -714,6 +714,17 @@ signed in on its own. Signing out this way is a real, full sign-out: it
 also closes any open connection tabs, the same as manually logging out
 would.
 
+This is enforced two ways, deliberately layered: the page itself checks
+for inactivity while it's open, and separately, the underlying session
+cookie's own expiration is tied to the same setting and rolls forward
+with each request your browser makes. The second part matters
+specifically for closing a laptop lid or otherwise leaving the browser
+running unattended - no JavaScript can run while a laptop is asleep, so
+without this, the saved setting would only ever apply while the page
+happened to still be open. With it, the session itself expires on the
+server after that much time with no activity at all, regardless of
+whether the page ever gets a chance to notice.
+
 ## Themes
 
 **⚙️ Settings → Appearance** has a theme dropdown: Dark (the original
