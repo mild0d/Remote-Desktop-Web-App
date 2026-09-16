@@ -94,19 +94,6 @@ Day-to-day: `./start.sh` / `./stop.sh`
 4. Click into the session once to make sure it has keyboard focus.
 5. Click **← Back to list** to keep the session running in the background and return to it later via its tab, or **Disconnect**/the tab's **×** to actually end it.
 
-### Command palette
-
-Press **Ctrl+K** (or **Cmd+K** on Mac) anywhere in the app to open a
-quick search - type a connection's name, hostname, or tag to jump
-straight to it, or search for an action like "Settings", "Add
-connection", or "Log out". Arrow keys move the selection, Enter opens
-it, Escape closes the palette.
-
-It works the same way whether you're on the connections list or
-already inside a session - pressing Ctrl+K while a remote session has
-keyboard focus opens the palette instead of sending the keystroke into
-the remote session.
-
 ### Default RDP credentials
 
 Click **⚙️ Settings** next to your username to save, per your own account:

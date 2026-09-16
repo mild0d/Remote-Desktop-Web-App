@@ -7,21 +7,6 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
-## [1.18.0] - 2026-09-16
-
-### Added
-- Command palette: press Ctrl+K (or Cmd+K on Mac) anywhere in the app to
-  search connections by name, hostname, or tag, and jump straight to
-  one - or run a quick action (Add connection, Settings, 2FA, Admin
-  panel if you have access, Log out, Back to connections list, Exit
-  split view) without reaching for the mouse. Arrow keys move the
-  selection, Enter opens it, Escape closes the palette.
-  Works from both the connections list and from inside an active
-  session - registered the same way as the SSH/RDP paste shortcut fix
-  from v1.14.3, so pressing Ctrl+K while a remote session is focused
-  opens the palette instead of forwarding the keystroke into the
-  remote session.
-
 ## [1.17.0] - 2026-09-16
 
 ### Added
