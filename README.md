@@ -793,10 +793,15 @@ don't apply to SSH (domain, security mode, color depth, certificate
 validation) hide themselves automatically once it's selected, and the
 port field defaults to 22 instead of 3389.
 
-Only password authentication is supported for now - no private key
-upload yet. If a specific SSH connection has no saved password, [the
-same connect-time prompt used for RDP](#connecting-without-saved-credentials)
-appears instead, asking for one just for that session.
+SSH supports two authentication methods, chosen via the "Authentication
+method" dropdown that appears once SSH is selected: **Password** (the
+default) or **Private key**. Picking Private key swaps the password
+field for a textarea to paste the key, plus an optional passphrase
+field if the key itself is encrypted - both are encrypted at rest the
+same way saved passwords already are. If a key-auth connection has no
+saved key, [the same connect-time prompt used for RDP
+passwords](#connecting-without-saved-credentials) appears instead,
+asking you to paste one just for that session.
 
 One deliberate difference from RDP: SSH connections never fall back to
 your account's saved default credentials in **⚙️ Settings**, even if

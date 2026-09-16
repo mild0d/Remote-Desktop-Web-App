@@ -7,6 +7,26 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.17.0] - 2026-09-16
+
+### Added
+- SSH connections now support private key authentication as an
+  alternative to password auth. New "Authentication method" selector
+  on SSH connections (Password / Private Key); picking Private Key
+  swaps the password field for a textarea to paste the key, plus an
+  optional passphrase field if the key itself is encrypted. Existing
+  SSH connections are unaffected - they default to password auth
+  exactly as before.
+  The key and passphrase are encrypted at rest the same way passwords
+  already are. Verified against guacd's actual SSH protocol parameters
+  (`private-key`, `passphrase`) directly from guacamole-lite's own
+  MockGuacdServer.js reference, and confirmed end-to-end by decrypting
+  a real generated connection token to check the settings guacd
+  actually receives.
+  If a key-auth SSH connection has no saved key, connecting prompts for
+  one for that session only (never saved) - the same one-time pattern
+  already used for ad-hoc passwords.
+
 ## [1.16.0] - 2026-09-15
 
 ### Added

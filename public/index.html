@@ -455,15 +455,39 @@
           <label class="form-label">Username</label>
           <input id="f-username" class="form-control" placeholder="Leave blank to use your default credentials" />
         </div>
-        <div class="mb-3">
-          <label class="form-label">Password</label>
-          <input id="f-password" type="password" class="form-control" placeholder="Leave blank to keep existing (or use default if unset)" />
-          <div class="form-text" id="f-password-status"></div>
-          <div class="form-check mt-1 d-none" id="f-clear-password-wrap">
-            <input class="form-check-input" type="checkbox" id="f-clear-password" />
-            <label class="form-check-label small" for="f-clear-password">Clear the saved password (use my default credentials instead)</label>
+        <div id="ssh-auth-method-field" class="mb-3 d-none">
+          <label class="form-label">Authentication method</label>
+          <select id="f-auth-method" class="form-select">
+            <option value="password">Password</option>
+            <option value="key">Private key</option>
+          </select>
+        </div>
+        <div id="password-auth-field">
+          <div class="mb-3">
+            <label class="form-label">Password</label>
+            <input id="f-password" type="password" class="form-control" placeholder="Leave blank to keep existing (or use default if unset)" />
+            <div class="form-text" id="f-password-status"></div>
+            <div class="form-check mt-1 d-none" id="f-clear-password-wrap">
+              <input class="form-check-input" type="checkbox" id="f-clear-password" />
+              <label class="form-check-label small" for="f-clear-password">Clear the saved password (use my default credentials instead)</label>
+            </div>
+            <div class="form-text" id="f-password-hint">Set your default username/password once via the ⚙️ Settings button - connections without their own credentials will use those automatically.</div>
           </div>
-          <div class="form-text" id="f-password-hint">Set your default username/password once via the ⚙️ Settings button - connections without their own credentials will use those automatically.</div>
+        </div>
+        <div id="key-auth-fields" class="d-none">
+          <div class="mb-3">
+            <label class="form-label">Private key</label>
+            <textarea id="f-private-key" class="form-control" rows="5" placeholder="Leave blank to keep existing&#10;-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" style="font-family: monospace; font-size: 0.85em;"></textarea>
+            <div class="form-text" id="f-key-status"></div>
+            <div class="form-check mt-1 d-none" id="f-clear-key-wrap">
+              <input class="form-check-input" type="checkbox" id="f-clear-key" />
+              <label class="form-check-label small" for="f-clear-key">Clear the saved key (you'll be prompted for one each time you connect)</label>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Key passphrase <span class="text-secondary">(only if the key itself is encrypted)</span></label>
+            <input id="f-key-passphrase" type="password" class="form-control" placeholder="Leave blank to keep existing" />
+          </div>
         </div>
         <div id="rdp-only-fields-2">
           <div class="mb-3">
@@ -553,9 +577,17 @@
           <label class="form-label">Username</label>
           <input id="connect-prompt-username" class="form-control" autocomplete="username" />
         </div>
-        <div class="mb-3">
+        <div class="mb-3" id="connect-prompt-password-wrap">
           <label class="form-label">Password</label>
           <input id="connect-prompt-password" type="password" class="form-control" autocomplete="current-password" />
+        </div>
+        <div class="mb-3 d-none" id="connect-prompt-key-wrap">
+          <label class="form-label">Private key</label>
+          <textarea id="connect-prompt-private-key" class="form-control" rows="5" style="font-family: monospace; font-size: 0.85em;" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+        </div>
+        <div class="mb-3 d-none" id="connect-prompt-passphrase-wrap">
+          <label class="form-label">Key passphrase <span class="text-secondary">(if the key is encrypted)</span></label>
+          <input id="connect-prompt-key-passphrase" type="password" class="form-control" />
         </div>
         <div class="app-panel-footer">
           <button type="button" class="btn btn-outline-light" id="connect-prompt-cancel-btn">Cancel</button>
@@ -1445,12 +1477,21 @@ document.getElementById('ad-browse-import-btn').addEventListener('click', async 
 
 // Shows/hides the fields that only apply to RDP - SSH doesn't use a
 // domain, a security mode, a color depth, or certificate validation.
+// Also shows the auth-method selector only for SSH (RDP is always
+// password-based here) and toggles between the password and private-key
+// fields based on whichever method is currently selected.
 function applyProtocolFieldVisibility() {
   const isSSH = document.getElementById('f-protocol').value === 'ssh';
   document.getElementById('rdp-only-fields').classList.toggle('d-none', isSSH);
   document.getElementById('rdp-only-fields-2').classList.toggle('d-none', isSSH);
   document.getElementById('f-password-hint').classList.toggle('d-none', isSSH);
+  document.getElementById('ssh-auth-method-field').classList.toggle('d-none', !isSSH);
+  const isKeyAuth = isSSH && document.getElementById('f-auth-method').value === 'key';
+  document.getElementById('password-auth-field').classList.toggle('d-none', isKeyAuth);
+  document.getElementById('key-auth-fields').classList.toggle('d-none', !isKeyAuth);
 }
+
+document.getElementById('f-auth-method').addEventListener('change', applyProtocolFieldVisibility);
 
 document.getElementById('f-protocol').addEventListener('change', (e) => {
   applyProtocolFieldVisibility();
@@ -1467,6 +1508,7 @@ function openModal(existing) {
   document.getElementById('conn-id').value = existing ? existing.id : '';
   document.getElementById('f-name').value = existing ? existing.name : '';
   document.getElementById('f-protocol').value = existing ? existing.protocol || 'rdp' : 'rdp';
+  document.getElementById('f-auth-method').value = existing ? existing.auth_method || 'password' : 'password';
   applyProtocolFieldVisibility();
   document.getElementById('f-icon').value = existing ? existing.icon || '🖥️' : '🖥️';
   document.getElementById('f-hostname').value = existing ? existing.hostname : '';
@@ -1499,6 +1541,21 @@ function openModal(existing) {
     passwordInputEl.placeholder = 'Leave blank to keep existing (or use default if unset)';
     passwordStatusEl.textContent = '';
     clearPasswordWrap.classList.add('d-none');
+  }
+
+  const keyStatusEl = document.getElementById('f-key-status');
+  const keyInputEl = document.getElementById('f-private-key');
+  const clearKeyWrap = document.getElementById('f-clear-key-wrap');
+  document.getElementById('f-key-passphrase').value = '';
+  document.getElementById('f-clear-key').checked = false;
+  if (existing && existing.hasPrivateKey) {
+    keyInputEl.placeholder = '(saved - leave blank to keep it)';
+    keyStatusEl.textContent = '🔒 A private key is saved for this connection' + (existing.hasKeyPassphrase ? ' (passphrase-protected).' : '.');
+    clearKeyWrap.classList.remove('d-none');
+  } else {
+    keyInputEl.placeholder = 'Leave blank to keep existing\n-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----';
+    keyStatusEl.textContent = existing ? 'No key is saved for this connection - you\'ll be prompted for one each time you connect.' : '';
+    clearKeyWrap.classList.add('d-none');
   }
   document.getElementById('f-security').value = existing ? existing.security || 'any' : 'any';
   document.getElementById('f-color-depth').value = existing ? existing.color_depth || '16' : '16';
@@ -1584,7 +1641,7 @@ rowsEl.addEventListener('click', async (e) => {
     const name = e.target.getAttribute('data-name');
     const conn = currentConns.find((c) => String(c.id) === String(connectId));
     if (conn && needsCredentialPrompt(conn)) {
-      openConnectPrompt(connectId, name);
+      openConnectPrompt(connectId, name, conn);
     } else {
       openOrFocusSession(connectId, name);
     }
@@ -1930,6 +1987,10 @@ form.addEventListener('submit', async (e) => {
     username: document.getElementById('f-username').value,
     password: document.getElementById('f-password').value,
     clearPassword: document.getElementById('f-clear-password').checked,
+    auth_method: document.getElementById('f-auth-method').value,
+    private_key: document.getElementById('f-private-key').value,
+    key_passphrase: document.getElementById('f-key-passphrase').value,
+    clearPrivateKey: document.getElementById('f-clear-key').checked,
     security: document.getElementById('f-security').value,
     color_depth: document.getElementById('f-color-depth').value,
     ignore_cert: document.getElementById('f-ignore-cert').checked,
@@ -2424,6 +2485,9 @@ function needsCredentialPrompt(conn) {
   // unrelated identity for most real setups.
   const isSSH = conn.protocol === 'ssh';
   const hasUsername = Boolean(conn.username) || (!isSSH && Boolean(defaultCredentialsStatus.username));
+  if (isSSH && conn.auth_method === 'key') {
+    return !hasUsername || !conn.hasPrivateKey;
+  }
   const hasPassword = Boolean(conn.hasPassword) || (!isSSH && Boolean(defaultCredentialsStatus.hasPassword));
   return !hasUsername || !hasPassword;
 }
@@ -2432,13 +2496,20 @@ const connectPromptModalBackdrop = document.getElementById('connect-prompt-modal
 const connectPromptForm = document.getElementById('connect-prompt-form');
 let connectPromptPendingId = null;
 let connectPromptPendingName = null;
+let connectPromptPendingIsKeyAuth = false;
 
-function openConnectPrompt(id, name) {
+function openConnectPrompt(id, name, conn) {
   connectPromptPendingId = id;
   connectPromptPendingName = name;
+  connectPromptPendingIsKeyAuth = Boolean(conn && conn.protocol === 'ssh' && conn.auth_method === 'key');
   document.getElementById('connect-prompt-conn-name').textContent = name;
   document.getElementById('connect-prompt-username').value = '';
   document.getElementById('connect-prompt-password').value = '';
+  document.getElementById('connect-prompt-private-key').value = '';
+  document.getElementById('connect-prompt-key-passphrase').value = '';
+  document.getElementById('connect-prompt-password-wrap').classList.toggle('d-none', connectPromptPendingIsKeyAuth);
+  document.getElementById('connect-prompt-key-wrap').classList.toggle('d-none', !connectPromptPendingIsKeyAuth);
+  document.getElementById('connect-prompt-passphrase-wrap').classList.toggle('d-none', !connectPromptPendingIsKeyAuth);
   connectPromptModalBackdrop.classList.add('open');
 }
 
@@ -2449,11 +2520,13 @@ document.getElementById('connect-prompt-cancel-btn').addEventListener('click', (
 connectPromptForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const username = document.getElementById('connect-prompt-username').value;
-  const password = document.getElementById('connect-prompt-password').value;
   connectPromptModalBackdrop.classList.remove('open');
   // Passed straight through to this one connection attempt only - never
   // saved to the connection or the account's defaults.
-  openOrFocusSession(connectPromptPendingId, connectPromptPendingName, { username, password });
+  const adHocCredentials = connectPromptPendingIsKeyAuth
+    ? { username, private_key: document.getElementById('connect-prompt-private-key').value, key_passphrase: document.getElementById('connect-prompt-key-passphrase').value }
+    : { username, password: document.getElementById('connect-prompt-password').value };
+  openOrFocusSession(connectPromptPendingId, connectPromptPendingName, adHocCredentials);
 });
 
 async function openOrFocusSession(id, name, adHocCredentials) {

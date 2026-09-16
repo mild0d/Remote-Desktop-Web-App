@@ -12,8 +12,8 @@ const { getHistoryForConnection } = require('../lib/reachabilityHistory');
 
 const router = express.Router();
 
-function stripPassword({ password, ...rest }) {
-  return { ...rest, hasPassword: Boolean(password) };
+function stripPassword({ password, private_key, key_passphrase, ...rest }) {
+  return { ...rest, hasPassword: Boolean(password), hasPrivateKey: Boolean(private_key), hasKeyPassphrase: Boolean(key_passphrase) };
 }
 
 // Every route below is mounted behind requireLogin in server.js, so
@@ -243,12 +243,15 @@ router.get('/:id/reachability-history', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, protocol } = req.body || {};
+  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, protocol, auth_method, private_key, key_passphrase } = req.body || {};
   if (!name || !hostname) {
     return res.status(400).json({ error: 'name and hostname are required' });
   }
   if (protocol && protocol !== 'rdp' && protocol !== 'ssh') {
     return res.status(400).json({ error: 'Invalid protocol' });
+  }
+  if (auth_method && auth_method !== 'password' && auth_method !== 'key') {
+    return res.status(400).json({ error: 'Invalid auth_method' });
   }
 
   const list = loadAll();
@@ -262,6 +265,12 @@ router.post('/', (req, res) => {
     port: parseInt(port, 10) || (resolvedProtocol === 'ssh' ? 22 : 3389),
     username: username || '',
     password: password ? encrypt(password) : '',
+    // Only meaningful for SSH - defaults to 'password' so existing SSH
+    // connections (saved before this existed) keep behaving exactly as
+    // they did.
+    auth_method: resolvedProtocol === 'ssh' ? (auth_method || 'password') : 'password',
+    private_key: private_key ? encrypt(private_key) : '',
+    key_passphrase: key_passphrase ? encrypt(key_passphrase) : '',
     domain: domain || '',
     security: security || 'any',
     ignore_cert: ignore_cert === false ? 0 : 1,
@@ -284,9 +293,12 @@ router.put('/:id', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
 
   const existing = list[idx];
-  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, clearPassword, protocol } = req.body || {};
+  const { name, hostname, port, username, password, domain, security, ignore_cert, color_depth, icon, notes, tags, clearPassword, protocol, auth_method, private_key, key_passphrase, clearPrivateKey } = req.body || {};
   if (protocol && protocol !== 'rdp' && protocol !== 'ssh') {
     return res.status(400).json({ error: 'Invalid protocol' });
+  }
+  if (auth_method && auth_method !== 'password' && auth_method !== 'key') {
+    return res.status(400).json({ error: 'Invalid auth_method' });
   }
 
   list[idx] = {
@@ -301,6 +313,11 @@ router.put('/:id', (req, res) => {
     // explicit signal specifically for wiping it, so the connection
     // falls back to the user's default credentials instead.
     password: clearPassword ? '' : password ? encrypt(password) : existing.password,
+    auth_method: auth_method ?? existing.auth_method ?? 'password',
+    // Same clear-vs-keep-existing pattern as password above - a blank
+    // field alone never wipes a saved key, only the explicit checkbox does.
+    private_key: clearPrivateKey ? '' : private_key ? encrypt(private_key) : existing.private_key,
+    key_passphrase: clearPrivateKey ? '' : key_passphrase ? encrypt(key_passphrase) : existing.key_passphrase,
     domain: domain ?? existing.domain,
     security: security ?? existing.security,
     ignore_cert: ignore_cert === undefined ? existing.ignore_cert : ignore_cert ? 1 : 0,
@@ -384,7 +401,7 @@ router.post('/:id/token', (req, res) => {
   try {
     ensureUserDriveDir(req.session.userId);
 
-    const { width, height, username: adHocUsername, password: adHocPassword, domain: adHocDomain } = req.body || {};
+    const { width, height, username: adHocUsername, password: adHocPassword, domain: adHocDomain, private_key: adHocPrivateKey, key_passphrase: adHocKeyPassphrase } = req.body || {};
     const protocol = conn.protocol || 'rdp';
 
     let settings;
@@ -399,7 +416,6 @@ router.post('/:id/token', (req, res) => {
       // Falling back to it silently here would connect with the wrong
       // identity instead of clearly prompting for the right one.
       effectiveUsername = adHocUsername || conn.username;
-      effectivePassword = adHocPassword || (conn.password ? decrypt(conn.password) : '');
       settings = {
         hostname: conn.hostname,
         port: String(conn.port),
@@ -407,6 +423,15 @@ router.post('/:id/token', (req, res) => {
         height: String(height || '800'),
         dpi: '96',
       };
+      if ((conn.auth_method || 'password') === 'key') {
+        const effectivePrivateKey = adHocPrivateKey || (conn.private_key ? decrypt(conn.private_key) : '');
+        const effectiveKeyPassphrase = adHocKeyPassphrase || (conn.key_passphrase ? decrypt(conn.key_passphrase) : '');
+        if (effectivePrivateKey) settings['private-key'] = effectivePrivateKey;
+        if (effectiveKeyPassphrase) settings.passphrase = effectiveKeyPassphrase;
+        effectivePassword = ''; // key auth and password auth are mutually exclusive here - never send both
+      } else {
+        effectivePassword = adHocPassword || (conn.password ? decrypt(conn.password) : '');
+      }
     } else {
       settings = {
         hostname: conn.hostname,
