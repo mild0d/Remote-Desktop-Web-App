@@ -70,6 +70,24 @@
   .session-pane { display: none; height: calc(100vh - 42px); }
   .session-pane.active-pane { display: flex; flex-direction: column; }
   .session-pane:fullscreen { height: 100vh; } /* no tab bar taking up space while fullscreened, unlike normal view */
+
+  /* Split view: two panes side by side. !important on display is needed
+     to override .session-pane's own display:none default above, since a
+     split pane isn't (and doesn't need to be) marked .active-pane too. */
+  #sessions-container.split-mode { display: flex; flex-direction: row; }
+  .session-pane.split-pane {
+    display: flex !important; flex-direction: column;
+    flex: 1 1 50%; min-width: 0;
+    outline: 2px solid transparent; outline-offset: -2px;
+  }
+  .session-pane.split-pane:first-child { border-right: 1px solid var(--bs-border-color); }
+  .session-pane.split-pane.split-focused { outline-color: var(--bs-primary); }
+  /* Shown while dragging a tab over a pane, before it's dropped - lets the
+     drop target register before you commit to it. */
+  .session-pane.drop-target { outline: 2px dashed var(--bs-primary); outline-offset: -2px; }
+
+  .tab-btn.in-split { box-shadow: inset 0 -2px 0 var(--bs-primary); opacity: 0.7; }
+  .tab-btn.in-split.split-focused-tab { opacity: 1; background: var(--bs-tertiary-bg); }
   /* position:relative + z-index:0 here establishes a CSS stacking context -
      required so Guacamole's internal negative-z-index canvas layer renders
      correctly instead of disappearing behind the rest of the page. */
@@ -303,6 +321,7 @@
     <button class="btn btn-outline-light btn-sm" id="ctrl-alt-del-btn" title="Send Ctrl+Alt+Del to the remote session">⌨️ Ctrl+Alt+Del</button>
     <button class="btn btn-outline-light btn-sm" id="fullscreen-btn" title="Enter fullscreen">⛶ Fullscreen</button>
     <button class="btn btn-outline-light btn-sm" id="files-btn">📁 Files</button>
+    <button class="btn btn-outline-light btn-sm d-none" id="exit-split-btn" title="Return to single-session view">⊟ Exit split</button>
     <button class="btn btn-outline-light btn-sm" id="shared-back-btn">← Back to list</button>
     <button class="btn btn-danger btn-sm" id="shared-disconnect-btn">Disconnect</button>
   </div>
@@ -1937,6 +1956,12 @@ form.addEventListener('submit', async (e) => {
 // and its websocket tunnel stay alive and keep receiving/rendering updates.
 const sessions = new Map(); // key: connection id (string) -> { name, client, paneEl, tabEl, displayArea, state, statusText }
 let activeKey = 'list';
+// When set, an array of exactly the two session keys currently shown side
+// by side. activeKey doubles as "which of the two has keyboard focus" while
+// split - the toolbar (status text, Ctrl+Alt+Del, Disconnect, etc.) already
+// reads from activeKey everywhere, so keeping that one meaning avoids
+// duplicating focus-tracking state.
+let splitKeys = null;
 
 const STATE_NAMES = ['Idle', 'Connecting', 'Waiting for data', 'Connected', 'Disconnecting', 'Disconnected'];
 
@@ -1985,7 +2010,87 @@ function updateStatusDisplay(key) {
   }
 }
 
+// Tears down split-view CSS state without touching which sessions exist -
+// used both when deliberately exiting split view and as a first step
+// before entering a different split.
+function clearSplitView() {
+  if (!splitKeys) return;
+  sessionsContainer.classList.remove('split-mode');
+  splitKeys.forEach((k) => {
+    const s = sessions.get(k);
+    if (!s) return;
+    s.paneEl.classList.remove('split-pane', 'split-focused');
+    s.tabEl.classList.remove('in-split', 'split-focused-tab');
+  });
+  splitKeys = null;
+  document.getElementById('exit-split-btn').classList.add('d-none');
+}
+
+// Moves keyboard focus (and the shared toolbar, which already reads
+// everything from activeKey) between the two sessions currently shown
+// side by side, without otherwise disturbing the split.
+function focusSplitPane(key) {
+  if (!splitKeys || !splitKeys.includes(key)) return;
+  const session = sessions.get(key);
+  if (!session) return;
+  activeKey = key;
+  splitKeys.forEach((k) => {
+    const s = sessions.get(k);
+    if (!s) return;
+    s.paneEl.classList.toggle('split-focused', k === key);
+    s.tabEl.classList.toggle('split-focused-tab', k === key);
+  });
+  enableKeyboardForwarding(session);
+  updateStatusDisplay(key);
+  clipboardSink.focus();
+  document.getElementById('ctrl-alt-del-btn').classList.toggle('d-none', session.protocol === 'ssh');
+}
+
+// Entered by dropping a tab (droppedKey) onto another session's pane
+// (paneOwnerKey). The newly dropped-in session becomes focused, matching
+// the expectation that dragging something in is "switching to it".
+function enterSplitView(droppedKey, paneOwnerKey) {
+  const droppedSession = sessions.get(droppedKey);
+  const paneOwnerSession = sessions.get(paneOwnerKey);
+  if (!droppedSession || !paneOwnerSession) return;
+
+  if (splitKeys) clearSplitView(); // replace any existing split rather than stacking a third pane
+
+  listView.style.display = 'none';
+  listTab.classList.remove('active-tab');
+  sessions.forEach((s) => s.tabEl.classList.remove('active-tab'));
+  sessions.forEach((s) => s.paneEl.classList.remove('active-pane'));
+
+  splitKeys = [droppedKey, paneOwnerKey];
+  sessionsContainer.classList.add('split-mode');
+  splitKeys.forEach((k) => {
+    const s = sessions.get(k);
+    s.paneEl.classList.add('split-pane');
+    s.tabEl.classList.add('in-split');
+  });
+
+  sessionControls.classList.add('controls-visible');
+  document.getElementById('exit-split-btn').classList.remove('d-none');
+
+  focusSplitPane(droppedKey);
+
+  // Both panes just changed from full width to half width - wait a frame
+  // so the browser has actually applied the new layout before measuring
+  // displayArea's size, then fit/resize each one independently.
+  requestAnimationFrame(() => {
+    [droppedSession, paneOwnerSession].forEach((s) => {
+      fitSessionDisplay(s);
+      requestResize(s);
+    });
+  });
+}
+
 function showView(key) {
+  // Any normal tab-driven navigation (including clicking one of the two
+  // sessions currently split) backs out of split view first, rather than
+  // trying to fold that into the single/split display logic below.
+  clearSplitView();
+
   activeKey = key;
 
   listView.style.display = key === 'list' ? '' : 'none';
@@ -2029,17 +2134,19 @@ function showView(key) {
 
 let resizeDebounceTimer = null;
 window.addEventListener('resize', () => {
-  const session = sessions.get(activeKey);
-  if (!session) return;
+  const keysToResize = splitKeys || [activeKey];
+  const sessionsToResize = keysToResize.map((k) => sessions.get(k)).filter(Boolean);
+  if (!sessionsToResize.length) return;
   // Rescale immediately so it doesn't look broken while dragging the window.
-  fitSessionDisplay(session);
+  sessionsToResize.forEach((s) => fitSessionDisplay(s));
   // Debounce the actual server-side resolution change request - sending it
   // on every single resize event while dragging would be excessive and
   // could cause flicker/lag on the RDP side.
   clearTimeout(resizeDebounceTimer);
-  resizeDebounceTimer = setTimeout(() => requestResize(session), 400);
+  resizeDebounceTimer = setTimeout(() => sessionsToResize.forEach((s) => requestResize(s)), 400);
 });
 
+document.getElementById('exit-split-btn').addEventListener('click', () => showView(activeKey));
 listTab.addEventListener('click', () => showView('list'));
 sharedBackBtn.addEventListener('click', () => showView('list'));
 sharedDisconnectBtn.addEventListener('click', () => closeSession(activeKey));
@@ -2072,9 +2179,18 @@ function closeSession(key) {
     if (session.thumbnailInterval) clearInterval(session.thumbnailInterval);
     try { session.client.disconnect(); } catch (err) { /* ignore */ }
   }
+  const wasInSplit = splitKeys && splitKeys.includes(key);
+  const otherSplitKey = wasInSplit ? splitKeys.find((k) => k !== key) : null;
   session.paneEl.remove();
   session.tabEl.remove();
   sessions.delete(key);
+
+  if (wasInSplit) {
+    clearSplitView(); // otherKey's own split-pane/split-focused classes need clearing too
+    showView(sessions.has(otherSplitKey) ? otherSplitKey : 'list');
+    return;
+  }
+
   if (activeKey === key) showView('list');
 }
 
@@ -2355,6 +2471,7 @@ async function openOrFocusSession(id, name, adHocCredentials) {
   const tabEl = document.createElement('button');
   tabEl.className = 'tab-btn';
   tabEl.draggable = true;
+  tabEl.dataset.sessionKey = key; // read by a pane's drop handler to know which tab landed on it
   tabEl.innerHTML = `<span class="tab-label"></span><span class="tab-close" title="Disconnect">×</span>`;
   tabEl.querySelector('.tab-label').textContent = name;
   tabEl.addEventListener('click', (e) => {
@@ -2378,6 +2495,36 @@ async function openOrFocusSession(id, name, adHocCredentials) {
   paneEl.className = 'session-pane';
   paneEl.innerHTML = `<div class="display-area"></div>`;
   sessionsContainer.appendChild(paneEl);
+
+  // Dropping a dragged tab onto this pane splits the screen between the
+  // dragged session and whichever session this pane belongs to. dragover
+  // must call preventDefault() for drop to fire at all - same requirement
+  // as tabsList's own reordering handler above.
+  paneEl.addEventListener('dragover', (e) => {
+    if (!draggedTabEl) return;
+    e.preventDefault();
+    paneEl.classList.add('drop-target');
+  });
+  paneEl.addEventListener('dragleave', () => {
+    paneEl.classList.remove('drop-target');
+  });
+  paneEl.addEventListener('drop', (e) => {
+    paneEl.classList.remove('drop-target');
+    if (!draggedTabEl) return;
+    e.preventDefault();
+    const droppedKey = draggedTabEl.dataset.sessionKey;
+    if (!droppedKey || droppedKey === key) return; // dropped onto its own pane - not a split
+    enterSplitView(droppedKey, key);
+  });
+
+  // A plain (non-preventDefault) listener - lets our own focus-switching
+  // logic run alongside Guacamole's own mouse-event forwarding on the same
+  // click, rather than needing to intercept or replace it.
+  paneEl.addEventListener('mousedown', () => {
+    if (splitKeys && splitKeys.includes(key) && activeKey !== key) {
+      focusSplitPane(key);
+    }
+  });
 
   const displayArea = paneEl.querySelector('.display-area');
 

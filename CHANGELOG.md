@@ -7,6 +7,23 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.16.0] - 2026-09-15
+
+### Added
+- Split-view: drag any session tab and drop it onto another open
+  session's pane to view both side by side. The dropped-in session
+  becomes focused; click either pane to move keyboard focus between
+  them (a highlighted border shows which one is currently focused).
+  The shared toolbar (status text, Ctrl+Alt+Del, Fullscreen,
+  Screenshot, Disconnect) always acts on whichever pane is focused.
+  Limited to two panes at a time - dropping a third tab in replaces
+  the current split rather than stacking further panes.
+  Exit split view via the dedicated "Exit split" button, or by
+  clicking any other tab (including one of the current split's own
+  tabs) - either returns to normal single-session view. Closing one
+  side of a split (via its tab's × or the shared Disconnect button)
+  automatically collapses back to the remaining session at full width.
+
 ## [1.15.1] - 2026-09-15
 
 ### Fixed

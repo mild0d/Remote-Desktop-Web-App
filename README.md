@@ -160,6 +160,21 @@ Connections** tab always stays put on the far left - it's not
 draggable, so open sessions can be freely reordered among themselves
 without ever displacing it.
 
+### Split view
+
+Drag an open session tab and drop it directly onto another session's
+pane to view both side by side, instead of reordering it in the tab
+bar. Click either pane to move keyboard focus between them - a
+highlighted border shows which one is currently receiving your
+keystrokes. The toolbar (Ctrl+Alt+Del, Fullscreen, Screenshot,
+Disconnect) always acts on whichever pane is focused.
+
+Only two sessions can be split at once; dropping a third tab in
+replaces the current split. To leave split view, click the **Exit
+split** button, or click any other tab - either returns to normal
+single-session view. Closing one side of a split collapses back to
+the remaining session at full width.
+
 ### Reachability indicator
 
 Each card shows a small dot next to its name — green if the host currently
