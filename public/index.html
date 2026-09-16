@@ -105,6 +105,23 @@
   .app-overlay.open { display: flex; }
   .app-overlay .card { max-height: 85vh; display: flex; flex-direction: column; }
   .app-overlay .card-body { overflow-y: auto; }
+
+  .command-palette-card { padding: 0; overflow: hidden; }
+  .command-palette-input {
+    border: none; border-radius: 0; border-bottom: 1px solid var(--bs-border-color);
+    padding: 16px; font-size: 1.05em;
+  }
+  .command-palette-input:focus { box-shadow: none; border-color: var(--bs-border-color); }
+  .command-palette-results { max-height: 50vh; overflow-y: auto; padding: 6px; }
+  .command-palette-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  }
+  .command-palette-row.selected { background: var(--bs-primary); color: #fff; }
+  .command-palette-row .cp-icon { font-size: 1.1em; width: 1.4em; text-align: center; flex-shrink: 0; }
+  .command-palette-row .cp-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .command-palette-row .cp-hint { font-size: 0.8em; opacity: 0.7; flex-shrink: 0; }
+  .command-palette-empty { padding: 16px; text-align: center; color: var(--bs-secondary-color); }
   .app-panel-footer {
     display: flex; justify-content: flex-end; gap: 8px;
     position: sticky; bottom: -1rem; margin: 20px -1rem -1rem; padding: 12px 1rem;
@@ -595,6 +612,13 @@
         </div>
       </form>
     </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="command-palette-backdrop">
+  <div class="card command-palette-card" style="width: 560px; max-width: 90vw; margin-top: 10vh;">
+    <input id="command-palette-input" class="form-control command-palette-input" placeholder="Search connections or type a command…" autocomplete="off" />
+    <div id="command-palette-results" class="command-palette-results"></div>
   </div>
 </div>
 
@@ -1620,6 +1644,19 @@ rowsEl.addEventListener('error', (e) => {
   }
 }, true);
 
+// Shared by the grid's click handler and the command palette - opens a
+// connection the same way regardless of where the request came from:
+// straight in if credentials are already available, or via the one-time
+// connect prompt if not.
+function connectToConnection(id, name) {
+  const conn = currentConns.find((c) => String(c.id) === String(id));
+  if (conn && needsCredentialPrompt(conn)) {
+    openConnectPrompt(id, name, conn);
+  } else {
+    openOrFocusSession(id, name);
+  }
+}
+
 rowsEl.addEventListener('click', async (e) => {
   const connectId = e.target.getAttribute('data-connect');
   const dropdownToggleId = e.target.getAttribute('data-dropdown-toggle');
@@ -1639,12 +1676,7 @@ rowsEl.addEventListener('click', async (e) => {
 
   if (connectId) {
     const name = e.target.getAttribute('data-name');
-    const conn = currentConns.find((c) => String(c.id) === String(connectId));
-    if (conn && needsCredentialPrompt(conn)) {
-      openConnectPrompt(connectId, name, conn);
-    } else {
-      openOrFocusSession(connectId, name);
-    }
+    connectToConnection(connectId, name);
   }
 });
 
@@ -2421,6 +2453,156 @@ document.addEventListener('keydown', (e) => {
     enableKeyboardForwarding(session); // don't leave forwarding disabled if the read itself failed
   });
 }, true); // true = capture phase, see comment above
+
+const commandPaletteBackdrop = document.getElementById('command-palette-backdrop');
+const commandPaletteInput = document.getElementById('command-palette-input');
+const commandPaletteResults = document.getElementById('command-palette-results');
+let paletteCurrentResults = [];
+let paletteSelectedIndex = 0;
+
+// Rebuilt fresh every time the palette opens (and on every keystroke, since
+// it's cheap) rather than kept as static state - several of these depend on
+// things that can change between one opening and the next: which admin
+// permissions this account has, whether a session is currently active,
+// whether a split is in progress.
+function getPaletteActions() {
+  const actions = [
+    { icon: '➕', label: 'Add connection', run: () => openModal(null) },
+    { icon: '⚙️', label: 'Settings', run: () => document.getElementById('settings-btn').click() },
+    { icon: '🔓', label: 'Log out', run: () => document.getElementById('logout-btn').click() },
+  ];
+  if (!document.getElementById('twofa-settings-btn').classList.contains('d-none')) {
+    actions.push({ icon: '🔐', label: 'Two-factor authentication', run: () => document.getElementById('twofa-settings-btn').click() });
+  }
+  if (!document.getElementById('admin-btn').classList.contains('d-none')) {
+    actions.push({ icon: '🛡️', label: 'Admin panel', run: () => document.getElementById('admin-btn').click() });
+  }
+  if (activeKey !== 'list') {
+    actions.push({ icon: '☰', label: 'Back to connections list', run: () => showView('list') });
+  }
+  if (splitKeys) {
+    actions.push({ icon: '⊟', label: 'Exit split view', run: () => showView(activeKey) });
+  }
+  return actions;
+}
+
+function buildPaletteResults(query) {
+  const q = query.trim().toLowerCase();
+  const connectionResults = currentConns
+    .filter((c) => !q || c.name.toLowerCase().includes(q) || c.hostname.toLowerCase().includes(q) || (c.tags || []).some((t) => t.toLowerCase().includes(q)))
+    .map((c) => ({
+      icon: c.icon || (c.protocol === 'ssh' ? '⌨️' : '🖥️'),
+      label: c.name,
+      hint: sessions.has(String(c.id)) ? 'Open' : c.hostname,
+      run: () => connectToConnection(c.id, c.name),
+    }));
+  const actionResults = getPaletteActions().filter((a) => !q || a.label.toLowerCase().includes(q));
+  // Connections first - in normal use there are far more of them than
+  // static actions, and they're what you're most often reaching for.
+  return [...connectionResults, ...actionResults].slice(0, 20);
+}
+
+function renderPaletteResults() {
+  commandPaletteResults.innerHTML = '';
+  if (!paletteCurrentResults.length) {
+    commandPaletteResults.innerHTML = '<div class="command-palette-empty">No matches</div>';
+    return;
+  }
+  paletteCurrentResults.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'command-palette-row' + (i === paletteSelectedIndex ? ' selected' : '');
+    row.innerHTML = `<span class="cp-icon">${r.icon}</span><span class="cp-label"></span>${r.hint ? '<span class="cp-hint"></span>' : ''}`;
+    row.querySelector('.cp-label').textContent = r.label;
+    if (r.hint) row.querySelector('.cp-hint').textContent = r.hint;
+    // mousedown + preventDefault (rather than click) so clicking a result
+    // doesn't first blur the input - simpler than juggling focus back
+    // afterward.
+    row.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      executePaletteResult(i);
+    });
+    row.addEventListener('mousemove', () => {
+      if (paletteSelectedIndex !== i) {
+        paletteSelectedIndex = i;
+        renderPaletteResults();
+      }
+    });
+    commandPaletteResults.appendChild(row);
+  });
+}
+
+function executePaletteResult(index) {
+  const result = paletteCurrentResults[index];
+  if (!result) return;
+  closeCommandPalette();
+  result.run();
+}
+
+function openCommandPalette() {
+  commandPaletteInput.value = '';
+  paletteCurrentResults = buildPaletteResults('');
+  paletteSelectedIndex = 0;
+  renderPaletteResults();
+  commandPaletteBackdrop.classList.add('open');
+  commandPaletteInput.focus();
+}
+
+function closeCommandPalette() {
+  commandPaletteBackdrop.classList.remove('open');
+}
+
+commandPaletteInput.addEventListener('input', () => {
+  paletteCurrentResults = buildPaletteResults(commandPaletteInput.value);
+  paletteSelectedIndex = 0;
+  renderPaletteResults();
+});
+
+commandPaletteInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeCommandPalette();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (paletteCurrentResults.length) {
+      paletteSelectedIndex = (paletteSelectedIndex + 1) % paletteCurrentResults.length;
+      renderPaletteResults();
+    }
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (paletteCurrentResults.length) {
+      paletteSelectedIndex = (paletteSelectedIndex - 1 + paletteCurrentResults.length) % paletteCurrentResults.length;
+      renderPaletteResults();
+    }
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    executePaletteResult(paletteSelectedIndex);
+  }
+});
+
+// Closes on a click outside the card itself (i.e. on the dimmed backdrop).
+commandPaletteBackdrop.addEventListener('mousedown', (e) => {
+  if (e.target === commandPaletteBackdrop) closeCommandPalette();
+});
+
+// Capture phase, exactly like the paste handler above - guaranteed to see
+// (and be able to fully suppress) this keystroke before Guacamole's own
+// keyboard listener gets a chance to forward it to a remote session,
+// regardless of source-file ordering relative to sharedKeyboard's own
+// creation below.
+document.addEventListener('keydown', (e) => {
+  const isPaletteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'k';
+  if (!isPaletteShortcut) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (commandPaletteBackdrop.classList.contains('open')) {
+    closeCommandPalette();
+  } else if (!document.querySelector('.app-overlay.open')) {
+    // Deliberately doesn't stack on top of another already-open modal
+    // (Settings, Admin, Add connection, etc.) - avoids two overlays'
+    // worth of keyboard handling and Escape behavior colliding.
+    openCommandPalette();
+  }
+}, true);
 
 const sharedKeyboard = new Guacamole.Keyboard(document);
 
