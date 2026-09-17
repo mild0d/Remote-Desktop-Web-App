@@ -64,6 +64,12 @@ configuration needed if specs are already working):
 - **Network Configuration** - IPs, adapters, and DNS
 - **Windows Update Status** - last installed update, and whether a
   reboot is pending
+- **Pending Updates** - updates not yet installed, using whatever the
+  machine already knows from its last normal check (fast, no live
+  network contact)
+- **Check for Updates** - forces a fresh live check against Windows
+  Update/WSUS right now instead of using the last known state - this one
+  can genuinely take a minute or two, unlike everything else in this list
 - **Local User Accounts** - local (non-domain) accounts and whether
   each is enabled
 

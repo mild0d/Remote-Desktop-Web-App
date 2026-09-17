@@ -464,6 +464,8 @@
     <button data-tool-key="networkConfig">Network Configuration</button>
     <button data-tool-key="windowsUpdate">Windows Update Status</button>
     <button data-tool-key="localUsers">Local User Accounts</button>
+    <button data-tool-key="pendingUpdates">Pending Updates</button>
+    <button data-tool-key="checkForUpdates">Check for Updates</button>
   </div>
 </div>
 
@@ -2000,6 +2002,8 @@ const TOOL_META = {
   networkConfig: { title: 'Network Configuration', columns: [['adapter', 'Adapter'], ['ipv4', 'IPv4'], ['ipv6', 'IPv6'], ['gateway', 'Gateway'], ['dns', 'DNS']] },
   windowsUpdate: { title: 'Windows Update Status', columns: null },
   localUsers: { title: 'Local User Accounts', columns: [['Name', 'Username'], ['Enabled', 'Enabled'], ['LastLogon', 'Last Logon']] },
+  pendingUpdates: { title: 'Pending Updates', columns: [['title', 'Update'], ['kb', 'KB'], ['severity', 'Severity'], ['sizeMB', 'Size (MB)']] },
+  checkForUpdates: { title: 'Check for Updates', columns: [['title', 'Update'], ['kb', 'KB'], ['severity', 'Severity'], ['sizeMB', 'Size (MB)']] },
 };
 
 const toolsModalBackdrop = document.getElementById('tools-modal-backdrop');
@@ -2013,9 +2017,9 @@ let toolsModalConnectionId = null;
 let toolsModalToolKey = null;
 let eventViewerRawEvents = []; // last-fetched events for the currently selected log, filtered client-side by level so switching the level filter needs no extra round trip
 
-function renderGenericTable(columns, rows) {
+function renderGenericTable(columns, rows, emptyMessage) {
   if (!rows.length) {
-    toolsModalBody.innerHTML = '<div class="text-secondary small">No data returned.</div>';
+    toolsModalBody.innerHTML = `<div class="text-secondary small">${emptyMessage || 'No data returned.'}</div>`;
     return;
   }
   const table = document.createElement('table');
@@ -2148,11 +2152,16 @@ function renderToolResult(toolKey, data) {
   }
   toolsModalStatus.textContent = '';
   if (toolKey === 'windowsUpdate') return renderWindowsUpdate(data);
-  renderGenericTable(TOOL_META[toolKey].columns, Array.isArray(data) ? data : []);
+  const emptyMessage = (toolKey === 'pendingUpdates' || toolKey === 'checkForUpdates')
+    ? 'No pending updates - this machine is up to date.'
+    : undefined;
+  renderGenericTable(TOOL_META[toolKey].columns, Array.isArray(data) ? data : [], emptyMessage);
 }
 
 async function loadToolData(connectionId, toolKey) {
-  toolsModalStatus.textContent = 'Running over WinRM…';
+  toolsModalStatus.textContent = toolKey === 'checkForUpdates'
+    ? 'Checking Windows Update now - this can take a minute or two…'
+    : 'Running over WinRM…';
   toolsModalBody.innerHTML = '';
   const res = await fetch(`/api/connections/${connectionId}/tools/${toolKey}`);
   const data = await res.json().catch(() => ({ error: 'Unexpected response from the server.' }));

@@ -7,6 +7,26 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.23.0] - 2026-09-17
+
+### Added
+- Two new read-only tools in the Tools menu: **Pending Updates** and
+  **Check for Updates**. Both list updates not yet installed via the
+  Windows Update Agent COM API, differing only in
+  `IUpdateSearcher.Online`: Pending Updates searches using whatever the
+  machine already knows from its last normal check (fast, no live
+  network contact), while Check for Updates forces a fresh live query
+  against Windows Update/WSUS right now.
+  A live check is genuinely slow - commonly anywhere from several
+  seconds to a couple of minutes - so it gets its own 2-minute timeout
+  (the other read-only tools, which only ever read already-local state,
+  keep the existing 20-second one) and its own loading message so a
+  long wait doesn't read as frozen.
+  Deliberately stops at listing - installing updates is a genuinely
+  different, higher-risk kind of feature (long-running, can trigger a
+  reboot mid-install that drops the WinRM connection entirely) and is
+  intentionally not part of this change.
+
 ## [1.22.0] - 2026-09-17
 
 ### Added

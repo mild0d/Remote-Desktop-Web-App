@@ -699,7 +699,7 @@ router.get('/:id/tools/:toolKey', async (req, res) => {
   // Deliberately not cached, unlike /specs - process and service lists
   // are live, fast-changing state, and a stale cached view here would be
   // actively misleading rather than just slightly out of date.
-  const result = await runWinrmPowerShell({ hostname: conn.hostname, port: 5985, username, password, useSsl: false, powershell: tool.powershell });
+  const result = await runWinrmPowerShell({ hostname: conn.hostname, port: 5985, username, password, useSsl: false, powershell: tool.powershell, timeoutMs: tool.timeoutMs });
   if (result.error) {
     return res.status(502).json({ error: result.error });
   }
