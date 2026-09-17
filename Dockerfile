@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:26-alpine
 
 # Belt-and-suspenders alongside the explicit global error handler in
 # server.js - Express's own default error handler (which would only ever
