@@ -21,35 +21,125 @@ whenever someone happened to be looking. The popover shows the most recent
 overall uptime percentage across the full recorded history (up to about
 41 hours' worth, at the 5-minute check interval).
 
+## Setting up WinRM
+
+Both [hardware specs](#hardware-specs-rdp-only) and the [admin tools](#admin-tools-rdp-only)
+below run over WinRM (Windows Remote Management) - Windows' own remote
+management protocol, not something this app invented. It needs a bit of
+one-time setup on each Windows machine you want these features for. This
+section is the one place that setup is documented - both features below
+just link back here rather than repeating it.
+
+### 1. Enable WinRM
+
+On the target machine, run as Administrator:
+
+```
+winrm quickconfig
+```
+
+This starts the WinRM service, creates a listener on **port 5985 (HTTP)**,
+and adds a Windows Firewall exception for it.
+
+**If the machine's network connection is set to the "Public" profile**,
+`winrm quickconfig` will refuse to add that firewall exception
+automatically, and may print a message like *"WinRM firewall exception
+will not work since this is a public network"*. Either change the
+network's profile to Private (Settings → Network & Internet → the
+connection's properties), or add the firewall rule yourself:
+
+```
+netsh advfirewall firewall add rule name="WinRM-HTTP" dir=in localport=5985 protocol=TCP action=allow
+```
+
+### 2. Confirm the firewall actually allows it from this app
+
+Port 5985 is separate from RDP's own port - a firewall rule that only
+allows 3389 (or 22, for SSH) won't be enough. Make sure 5985/TCP is
+reachable specifically from wherever this app's container runs, not just
+open on the target machine's local network in general.
+
+### 3. For local (non-domain) accounts: disable UAC remote restrictions
+
+**This is the single most common reason WinRM looks correctly configured
+but most of the tools still fail** with access-denied-style errors. By
+default, Windows strips administrative rights from a *local* account's
+token for any remote connection (WinRM included) unless that account is
+the actual built-in Administrator account (not just a local account
+that's a member of the Administrators group) - a security feature called
+UAC remote restrictions. Domain accounts on a domain-joined machine
+aren't affected by this at all; this step only matters for local
+accounts.
+
+To disable it for a local admin account, run on the target machine:
+
+```
+New-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force
+```
+
+If you're already using a domain account, or the actual built-in
+Administrator account specifically, you can skip this step.
+
+### 4. Authentication
+
+This app authenticates over WinRM using **NTLM** specifically (not
+Kerberos, Basic, or CredSSP) - the most broadly compatible option for a
+local account without further configuration, and it also works for
+domain accounts via NTLM fallback. NTLM is enabled by default as part of
+WinRM's "Negotiate" authentication, so there's usually nothing extra to
+turn on for this specifically. The one exception: some hardened
+Active Directory environments disable NTLM entirely via a "Network
+security: Restrict NTLM" group policy - if that's been set in your
+environment, WinRM connections from this app will fail authentication
+regardless of how correctly everything else here is configured, and
+re-enabling NTLM (at least for this specific target) is the only fix.
+
+There's nothing to configure in this app itself for credentials - it
+authenticates with whichever username/password the connection would
+normally use to actually connect (its own saved password, or your
+account's default RDP credentials if the connection doesn't have its
+own).
+
+### 5. Verify it works before troubleshooting through this app
+
+Confirming WinRM itself is working, independent of this app, makes it
+much faster to tell "WinRM isn't set up right" apart from "something in
+the app is wrong" if a tool doesn't work. From another Windows machine
+with network access to the target:
+
+```
+Test-NetConnection -ComputerName <target> -Port 5985
+```
+
+confirms the port itself is reachable. If you have credentials handy and
+want to confirm authentication too, not just connectivity:
+
+```
+Invoke-Command -ComputerName <target> -Credential (Get-Credential) -ScriptBlock { whoami }
+```
+
+If that works, this app connecting with the same credentials should too.
+
+### Current limitations
+
+- **HTTP only, port 5985 only** - HTTPS (port 5986) and custom WinRM
+  ports aren't supported yet, it's hardcoded to plain HTTP on 5985.
+- **RDP connections only** - not available for SSH connections.
+
 ## Hardware specs (RDP only)
 
 For RDP connections, **click the connection's name** on its card to see
 its OS, CPU, memory, and disk usage, fetched live from the machine over
-WinRM. Results are cached for 10 minutes per connection - click
-**↻ Refresh** in the popup to bypass the cache and re-check immediately.
-
-This needs a bit of one-time setup on each Windows machine you want specs
-for:
-
-1. Enable WinRM: `winrm quickconfig` (run as Administrator)
-2. Make sure port 5985 is reachable from wherever this app's container
-   runs - it isn't the same port as RDP itself, so a firewall rule that
-   only allows 3389 won't be enough
-3. Uses NTLM auth with whichever credentials the connection would
-   normally use to actually connect (its own saved password, or your
-   account's default RDP credentials if the connection doesn't have its
-   own) - there's nothing separate to configure for this
-
-HTTPS (port 5986) and custom WinRM ports aren't supported yet - it's
-hardcoded to plain HTTP on 5985 for now. Not available for SSH
-connections.
+WinRM ([setup instructions above](#setting-up-winrm)). Results are cached
+for 10 minutes per connection - click **↻ Refresh** in the popup to
+bypass the cache and re-check immediately.
 
 ## Admin tools (RDP only)
 
 Each RDP connection's dropdown menu (**⋮** on its card) has a **Tools ▸**
-entry with eight read-only tools, all running over the same WinRM setup
-as hardware specs above (so the same one-time setup applies - no extra
-configuration needed if specs are already working):
+entry with read-only tools, all running over the same WinRM setup as
+hardware specs above ([setup instructions above](#setting-up-winrm)) - no
+extra configuration needed if specs are already working:
 
 - **Event Viewer** - browse any of the 5 standard Windows Logs
   (Application, Security, Setup, System, Forwarded Events, shown even
@@ -75,6 +165,6 @@ configuration needed if specs are already working):
 
 Each opens in its own window with a **↻ Refresh** button. Unlike
 hardware specs, none of these are cached - they're live, fast-changing
-state, so every open (and every refresh) is a fresh query. All eight
+state, so every open (and every refresh) is a fresh query. All ten
 are strictly read-only - nothing here changes anything on the remote
 machine.
