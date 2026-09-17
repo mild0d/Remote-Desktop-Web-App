@@ -3,11 +3,28 @@
 <head>
 <meta charset="UTF-8" />
 <title>Sign in — RDP Web App</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg" />
 <link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css" />
+<link rel="stylesheet" href="/vendor/bootstrap-icons/font/bootstrap-icons.min.css" />
+<style>
+  body {
+    background:
+      radial-gradient(ellipse 800px 500px at 50% -10%, rgba(13, 110, 253, 0.25), transparent),
+      var(--bs-body-bg);
+  }
+  .login-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 24px; }
+  .login-brand img { width: 48px; height: 48px; }
+  .login-brand .login-wordmark { font-size: 1.25rem; font-weight: 600; letter-spacing: 0.01em; }
+</style>
 </head>
 <body class="d-flex align-items-center justify-content-center vh-100">
 
-  <div class="card shadow" style="width: 340px;">
+  <div style="width: 340px;">
+    <div class="login-brand">
+      <img src="/logo.svg" alt="" />
+      <div class="login-wordmark">RDP Web App</div>
+    </div>
+    <div class="card shadow">
     <div class="card-body">
 
       <form id="login-form">
@@ -104,6 +121,7 @@
       </div>
 
     </div>
+  </div>
   </div>
 
   <script>

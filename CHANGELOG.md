@@ -7,6 +7,42 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.22.0] - 2026-09-17
+
+### Added
+- Favicon and a small logo/wordmark on the login page (previously
+  neither existed anywhere in the app).
+- Bootstrap Icons, vendored locally alongside the already-vendored
+  Bootstrap CSS - no CDN dependency, consistent with this app's
+  existing "nothing fetched from the internet at runtime" approach.
+  Used to replace decorative emoji throughout the UI chrome (buttons,
+  headings, status text, the command palette's static actions) with a
+  consistent icon set that renders identically across every OS, instead
+  of emoji, which render as different pictures on Windows/Mac/Linux.
+  Deliberately does NOT touch the connection icon picker's actual emoji
+  values, or anywhere a connection's own saved icon gets displayed
+  (thumbnail placeholder, card title, command palette connection
+  results) - those emoji are literally the persisted `icon` value in
+  each connection's saved data, not decoration, and Bootstrap Icons
+  can't be stored as a plain character the way an emoji can. Swapping
+  those would have silently broken the icon on every already-saved
+  connection.
+- A real system-font stack for the default theme (the Windows-themed
+  variants already had their own deliberate font choices - only the
+  default theme had been left on Bootstrap's bare default).
+- A subtle hover lift on connection cards.
+- Proper empty states: a friendly icon, clearer message, and a real
+  "Add connection" button for a brand-new account with nothing saved
+  yet, and a "Clear search/filter" button when a search or tag filter
+  matches nothing - both replacing what used to be a single plain line
+  of muted text.
+- Loading skeleton cards on the very first load of the connections
+  list, replacing what used to be an empty grid until the fetch
+  resolved. Deliberately only shows on that first load, not on every
+  refresh after adding/editing/deleting a connection - flashing the
+  whole grid to skeletons and back on every action would have been a
+  worse experience than no skeleton at all.
+
 ## [1.21.1] - 2026-09-16
 
 ### Changed
