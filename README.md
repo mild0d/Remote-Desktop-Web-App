@@ -94,6 +94,19 @@ Day-to-day: `./start.sh` / `./stop.sh`
 4. Click into the session once to make sure it has keyboard focus.
 5. Click **← Back to list** to keep the session running in the background and return to it later via its tab, or **Disconnect**/the tab's **×** to actually end it.
 
+### Command palette
+
+Press **Ctrl+K** (or **Cmd+K** on Mac) anywhere in the app to open a
+quick search - type a connection's name, hostname, or tag to jump
+straight to it, or search for an action like "Settings", "Add
+connection", or "Log out". Arrow keys move the selection, Enter opens
+it, Escape closes the palette.
+
+It works the same way whether you're on the connections list or
+already inside a session - pressing Ctrl+K while a remote session has
+keyboard focus opens the palette instead of sending the keystroke into
+the remote session.
+
 ### Default RDP credentials
 
 Click **⚙️ Settings** next to your username to save, per your own account:
@@ -193,6 +206,56 @@ whenever someone happened to be looking. The popover shows the most recent
 30 checks as a bar strip (green/red, hover a bar for its exact time) and an
 overall uptime percentage across the full recorded history (up to about
 41 hours' worth, at the 5-minute check interval).
+
+### Hardware specs (RDP only)
+
+For RDP connections, **click the connection's name** on its card to see
+its OS, CPU, memory, and disk usage, fetched live from the machine over
+WinRM. Results are cached for 10 minutes per connection - click
+**↻ Refresh** in the popup to bypass the cache and re-check immediately.
+
+This needs a bit of one-time setup on each Windows machine you want specs
+for:
+
+1. Enable WinRM: `winrm quickconfig` (run as Administrator)
+2. Make sure port 5985 is reachable from wherever this app's container
+   runs - it isn't the same port as RDP itself, so a firewall rule that
+   only allows 3389 won't be enough
+3. Uses NTLM auth with whichever credentials the connection would
+   normally use to actually connect (its own saved password, or your
+   account's default RDP credentials if the connection doesn't have its
+   own) - there's nothing separate to configure for this
+
+HTTPS (port 5986) and custom WinRM ports aren't supported yet - it's
+hardcoded to plain HTTP on 5985 for now. Not available for SSH
+connections.
+
+### Admin tools (RDP only)
+
+Each RDP connection's dropdown menu (**⋮** on its card) has a **Tools ▸**
+entry with eight read-only tools, all running over the same WinRM setup
+as hardware specs above (so the same one-time setup applies - no extra
+configuration needed if specs are already working):
+
+- **Event Viewer** - browse any of the 5 standard Windows Logs
+  (Application, Security, Setup, System, Forwarded Events) or an
+  active Applications and Services log, filterable by level
+  (Error/Warning/Information)
+- **Running Processes** - like Task Manager's Processes tab
+- **Running Services** - every service and its current status
+- **Disk Usage** - per-volume usage
+- **Installed Software** - what's installed, with version numbers
+- **Network Configuration** - IPs, adapters, and DNS
+- **Windows Update Status** - last installed update, and whether a
+  reboot is pending
+- **Local User Accounts** - local (non-domain) accounts and whether
+  each is enabled
+
+Each opens in its own window with a **↻ Refresh** button. Unlike
+hardware specs, none of these are cached - they're live, fast-changing
+state, so every open (and every refresh) is a fresh query. All eight
+are strictly read-only - nothing here changes anything on the remote
+machine.
 
 ### Two-factor authentication (required)
 

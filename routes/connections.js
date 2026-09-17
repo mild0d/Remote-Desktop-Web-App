@@ -8,6 +8,9 @@ const { thumbnailPath } = require('../lib/thumbnailStore');
 const { getDefaultCredentials, listAllUsers, findById: findUserById } = require('../lib/users');
 const { logConnectionEvent } = require('../lib/auditLog');
 const { checkReachable } = require('../lib/reachabilityCheck');
+const { fetchWinrmSpecs } = require('../lib/winrmSpecs');
+const { runWinrmPowerShell } = require('../lib/winrmRun');
+const { TOOLS } = require('../lib/winrmTools');
 const { getHistoryForConnection } = require('../lib/reachabilityHistory');
 
 const router = express.Router();
@@ -527,6 +530,180 @@ router.get('/:id/thumbnail', (req, res) => {
 
   res.setHeader('Cache-Control', 'no-store'); // always re-check, since a fresher screenshot may exist
   res.sendFile(filePath);
+});
+
+// Keyed by connection id. A WinRM round trip takes a few real seconds, so
+// this avoids re-querying the target every single time someone reopens
+// the same popup - while still being short enough that specs won't look
+// stale for long after, say, a RAM upgrade.
+const specsCache = new Map();
+const SPECS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+router.get('/:id/specs', async (req, res) => {
+  const conn = loadAll().find(
+    (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
+  );
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  if ((conn.protocol || 'rdp') !== 'rdp') {
+    return res.status(400).json({ error: 'Hardware specs are only available for RDP connections.' });
+  }
+
+  const forceRefresh = req.query.refresh === 'true';
+  const cached = specsCache.get(conn.id);
+  if (!forceRefresh && cached && Date.now() - cached.fetchedAt < SPECS_CACHE_TTL_MS) {
+    return res.json({ ...cached.data, cached: true });
+  }
+
+  // Same precedence as an actual RDP connection: the connection's own
+  // saved credentials, falling back to the account's central defaults -
+  // specs are fetched as whichever identity would actually be used to
+  // connect, not a separate one.
+  const defaults = getDefaultCredentials(req.session.userId);
+  const username = conn.username || defaults.username;
+  const password = conn.password ? decrypt(conn.password) : defaults.password;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'No credentials available - set one on this connection, or your default credentials in Settings.' });
+  }
+
+  // Hardcoded to the standard WinRM HTTP port for now - this is a
+  // separate service/port from the connection's own RDP port, and this
+  // app has no per-connection way to configure a custom WinRM port or
+  // HTTPS (5986) yet.
+  const result = await fetchWinrmSpecs({ hostname: conn.hostname, port: 5985, username, password, useSsl: false });
+  if (result.error) {
+    return res.status(502).json({ error: result.error });
+  }
+
+  specsCache.set(conn.id, { data: result, fetchedAt: Date.now() });
+  res.json({ ...result, cached: false });
+});
+
+// Real Windows log names are letters/digits/spaces/hyphens/underscores/
+// forward-slashes (e.g. "Microsoft-Windows-PowerShell/Operational") - this
+// allowlist matches that shape and nothing else. The log name comes from
+// user interaction and gets embedded directly into a PowerShell command
+// that runs with real admin credentials on the target machine, so this
+// isn't just cosmetic validation - it's what stands between a request
+// body and command injection into a privileged remote execution channel.
+// escapePsSingleQuoted is defense in depth on top of that allowlist, not
+// a substitute for it.
+const VALID_EVENT_LOG_NAME = /^[A-Za-z0-9 _\-/]{1,200}$/;
+function escapePsSingleQuoted(str) {
+  return str.replace(/'/g, "''");
+}
+
+router.get('/:id/eventlogs', async (req, res) => {
+  const conn = loadAll().find(
+    (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
+  );
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  if ((conn.protocol || 'rdp') !== 'rdp') {
+    return res.status(400).json({ error: 'Admin tools are only available for RDP connections.' });
+  }
+
+  const defaults = getDefaultCredentials(req.session.userId);
+  const username = conn.username || defaults.username;
+  const password = conn.password ? decrypt(conn.password) : defaults.password;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'No credentials available - set one on this connection, or your default credentials in Settings.' });
+  }
+
+  // The 5 standard "Windows Logs" always show up in the real Event Viewer
+  // regardless of whether they have any entries - matched here for the
+  // same familiar shape. "Other" is capped at 25, sorted by activity, so
+  // a machine with hundreds of installed apps' logs doesn't turn this
+  // into an unusable wall of mostly-empty, rarely-relevant entries.
+  const powershell = `
+    $standard = @('Application','Security','Setup','System','ForwardedEvents')
+    $standardLogs = foreach ($name in $standard) {
+      $log = Get-WinEvent -ListLog $name -ErrorAction SilentlyContinue
+      [PSCustomObject]@{ name = $name; recordCount = if ($log) { $log.RecordCount } else { 0 } }
+    }
+    $otherLogs = Get-WinEvent -ListLog * -ErrorAction SilentlyContinue |
+      Where-Object { $_.RecordCount -gt 0 -and ($standard -notcontains $_.LogName) } |
+      Sort-Object -Property RecordCount -Descending |
+      Select-Object -First 25 -Property @{N='name';E={$_.LogName}}, RecordCount
+    @{ standardLogs = @($standardLogs); otherLogs = @($otherLogs) } | ConvertTo-Json -Compress
+  `;
+
+  const result = await runWinrmPowerShell({ hostname: conn.hostname, port: 5985, username, password, useSsl: false, powershell });
+  if (result.error) {
+    return res.status(502).json({ error: result.error });
+  }
+  res.json(result);
+});
+
+router.get('/:id/eventlogs/events', async (req, res) => {
+  const logName = req.query.log;
+  if (!logName || !VALID_EVENT_LOG_NAME.test(logName)) {
+    return res.status(400).json({ error: 'Invalid or missing log name.' });
+  }
+
+  const conn = loadAll().find(
+    (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
+  );
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  if ((conn.protocol || 'rdp') !== 'rdp') {
+    return res.status(400).json({ error: 'Admin tools are only available for RDP connections.' });
+  }
+
+  const defaults = getDefaultCredentials(req.session.userId);
+  const username = conn.username || defaults.username;
+  const password = conn.password ? decrypt(conn.password) : defaults.password;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'No credentials available - set one on this connection, or your default credentials in Settings.' });
+  }
+
+  const safeLogName = escapePsSingleQuoted(logName);
+  const powershell = `
+    @(Get-WinEvent -LogName '${safeLogName}' -MaxEvents 100 -ErrorAction SilentlyContinue | ForEach-Object {
+      [PSCustomObject]@{
+        time = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss')
+        level = $_.LevelDisplayName
+        source = $_.ProviderName
+        id = $_.Id
+        message = ($_.Message -split "\`n")[0]
+      }
+    }) | ConvertTo-Json -Compress
+  `;
+
+  const result = await runWinrmPowerShell({ hostname: conn.hostname, port: 5985, username, password, useSsl: false, powershell });
+  if (result.error) {
+    return res.status(502).json({ error: result.error });
+  }
+  res.json({ events: Array.isArray(result) ? result : [] });
+});
+
+router.get('/:id/tools/:toolKey', async (req, res) => {
+  const tool = TOOLS[req.params.toolKey];
+  if (!tool) return res.status(400).json({ error: 'Unknown tool.' });
+
+  const conn = loadAll().find(
+    (c) => c.id === Number(req.params.id) && c.user_id === req.session.userId
+  );
+  if (!conn) return res.status(404).json({ error: 'Not found' });
+  if ((conn.protocol || 'rdp') !== 'rdp') {
+    return res.status(400).json({ error: 'Admin tools are only available for RDP connections.' });
+  }
+
+  // Same credential precedence as the specs route and an actual RDP
+  // connection: the connection's own saved password, falling back to the
+  // account's central defaults.
+  const defaults = getDefaultCredentials(req.session.userId);
+  const username = conn.username || defaults.username;
+  const password = conn.password ? decrypt(conn.password) : defaults.password;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'No credentials available - set one on this connection, or your default credentials in Settings.' });
+  }
+
+  // Deliberately not cached, unlike /specs - process and service lists
+  // are live, fast-changing state, and a stale cached view here would be
+  // actively misleading rather than just slightly out of date.
+  const result = await runWinrmPowerShell({ hostname: conn.hostname, port: 5985, username, password, useSsl: false, powershell: tool.powershell });
+  if (result.error) {
+    return res.status(502).json({ error: result.error });
+  }
+  res.json(result);
 });
 
 module.exports = router;

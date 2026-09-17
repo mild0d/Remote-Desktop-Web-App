@@ -105,6 +105,23 @@
   .app-overlay.open { display: flex; }
   .app-overlay .card { max-height: 85vh; display: flex; flex-direction: column; }
   .app-overlay .card-body { overflow-y: auto; }
+
+  .command-palette-card { padding: 0; overflow: hidden; }
+  .command-palette-input {
+    border: none; border-radius: 0; border-bottom: 1px solid var(--bs-border-color);
+    padding: 16px; font-size: 1.05em;
+  }
+  .command-palette-input:focus { box-shadow: none; border-color: var(--bs-border-color); }
+  .command-palette-results { max-height: 50vh; overflow-y: auto; padding: 6px; }
+  .command-palette-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  }
+  .command-palette-row.selected { background: var(--bs-primary); color: #fff; }
+  .command-palette-row .cp-icon { font-size: 1.1em; width: 1.4em; text-align: center; flex-shrink: 0; }
+  .command-palette-row .cp-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .command-palette-row .cp-hint { font-size: 0.8em; opacity: 0.7; flex-shrink: 0; }
+  .command-palette-empty { padding: 16px; text-align: center; color: var(--bs-secondary-color); }
   .app-panel-footer {
     display: flex; justify-content: flex-end; gap: 8px;
     position: sticky; bottom: -1rem; margin: 20px -1rem -1rem; padding: 12px 1rem;
@@ -156,6 +173,23 @@
   }
   #reachability-history-popover .history-bar.reachable { background: var(--bs-success); }
   #reachability-history-popover .history-bar.unreachable { background: var(--bs-danger); }
+
+  .conn-name-specs-trigger { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+
+  #specs-popover {
+    display: none;
+    position: fixed; z-index: 1060; width: 300px;
+    background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
+    border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    padding: 12px;
+  }
+  #specs-popover.show { display: block; }
+  #specs-popover .specs-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 0.9em; }
+  #specs-popover .specs-row .specs-label { color: var(--bs-secondary-color); }
+  #specs-popover .specs-row .specs-value { text-align: right; }
+  #specs-popover .specs-disk-row { font-size: 0.85em; }
+  #specs-popover .specs-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--bs-border-color); }
+  #specs-popover .specs-error { color: var(--bs-danger); font-size: 0.85em; }
 
   .select-checkbox-wrap {
     display: none;
@@ -381,9 +415,23 @@
 <div id="sessions-container"></div>
 
 <div id="card-dropdown-menu" class="card-dropdown-style">
-  <button id="card-dropdown-edit-btn">Edit</button>
-  <button id="card-dropdown-share-btn">Share</button>
-  <button id="card-dropdown-delete-btn" class="text-danger">Delete</button>
+  <div id="card-dropdown-main-view">
+    <button id="card-dropdown-edit-btn">Edit</button>
+    <button id="card-dropdown-share-btn">Share</button>
+    <button id="card-dropdown-tools-btn" class="d-none">Tools ▸</button>
+    <button id="card-dropdown-delete-btn" class="text-danger">Delete</button>
+  </div>
+  <div id="card-dropdown-tools-view" class="d-none">
+    <button id="card-dropdown-tools-back-btn">← Back</button>
+    <button data-tool-key="eventViewer">Event Viewer</button>
+    <button data-tool-key="processes">Running Processes</button>
+    <button data-tool-key="services">Running Services</button>
+    <button data-tool-key="diskUsage">Disk Usage</button>
+    <button data-tool-key="installedSoftware">Installed Software</button>
+    <button data-tool-key="networkConfig">Network Configuration</button>
+    <button data-tool-key="windowsUpdate">Windows Update Status</button>
+    <button data-tool-key="localUsers">Local User Accounts</button>
+  </div>
 </div>
 
 <div id="import-export-menu" class="card-dropdown-style">
@@ -397,6 +445,39 @@
   <div class="text-secondary small" id="reachability-history-status"></div>
   <div class="history-bars" id="reachability-history-bars"></div>
   <div class="text-secondary small" id="reachability-history-uptime"></div>
+</div>
+
+<div id="specs-popover">
+  <div class="fw-medium mb-1" id="specs-popover-name"></div>
+  <div class="text-secondary small" id="specs-popover-status"></div>
+  <div id="specs-popover-body"></div>
+  <div class="specs-footer">
+    <span class="text-secondary small" id="specs-popover-cached-note"></span>
+    <button type="button" class="btn btn-outline-light btn-sm" id="specs-popover-refresh-btn">↻ Refresh</button>
+  </div>
+</div>
+
+<div class="app-overlay" id="tools-modal-backdrop">
+  <div class="card" style="width: 700px; max-width: 95vw;">
+    <div class="card-body">
+      <h2 class="h5 card-title" id="tools-modal-title">Tool</h2>
+      <div class="d-none gap-2 mb-2" id="event-viewer-toolbar" style="display: flex;">
+        <select id="event-viewer-log-select" class="form-select form-select-sm" style="width: auto; flex: 1;"></select>
+        <select id="event-viewer-level-select" class="form-select form-select-sm" style="width: auto;">
+          <option value="">All levels</option>
+          <option value="Error">Error</option>
+          <option value="Warning">Warning</option>
+          <option value="Information">Information</option>
+        </select>
+      </div>
+      <div class="text-secondary small mb-2" id="tools-modal-status"></div>
+      <div id="tools-modal-body" style="max-height: 60vh; overflow-y: auto;"></div>
+      <div class="app-panel-footer">
+        <button type="button" class="btn btn-outline-light btn-sm" id="tools-modal-refresh-btn">↻ Refresh</button>
+        <button type="button" class="btn btn-outline-light" id="tools-modal-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="app-overlay" id="modal-backdrop">
@@ -595,6 +676,13 @@
         </div>
       </form>
     </div>
+  </div>
+</div>
+
+<div class="app-overlay" id="command-palette-backdrop">
+  <div class="card command-palette-card" style="width: 560px; max-width: 90vw; margin-top: 10vh;">
+    <input id="command-palette-input" class="form-control command-palette-input" placeholder="Search connections or type a command…" autocomplete="off" />
+    <div id="command-palette-results" class="command-palette-results"></div>
   </div>
 </div>
 
@@ -1222,7 +1310,9 @@ function renderConnections() {
         <div class="card-body">
           <h6 class="card-title mb-1">
             <span class="reachability-dot" data-reachability-id="${c.id}" title="Checking..."></span>
-            ${c.icon || '🖥️'} ${escapeHtml(c.name)} ${notesIcon}
+            ${c.icon || '🖥️'} ${(c.protocol || 'rdp') === 'rdp'
+              ? `<span class="conn-name-specs-trigger" data-specs-id="${c.id}" title="View hardware specs">${escapeHtml(c.name)}</span>`
+              : escapeHtml(c.name)} ${notesIcon}
           </h6>
           <div class="text-secondary small mb-2">${escapeHtml(c.hostname)}:${c.port}${c.username ? ' · ' + escapeHtml(c.username) : ''}</div>
           ${tagBadges ? `<div class="mb-2">${tagBadges}</div>` : ''}
@@ -1592,10 +1682,16 @@ let cardDropdownConnectionId = null;
 function closeCardDropdown() {
   cardDropdownMenu.classList.remove('show');
   cardDropdownConnectionId = null;
+  // Reset to the main view so a dropdown left mid-drill-down (Tools ▸)
+  // doesn't reopen on some other card still showing the tools list.
+  document.getElementById('card-dropdown-main-view').classList.remove('d-none');
+  document.getElementById('card-dropdown-tools-view').classList.add('d-none');
 }
 
 function openCardDropdown(triggerButton, connectionId) {
   cardDropdownConnectionId = connectionId;
+  const conn = currentConns.find((c) => String(c.id) === String(connectionId));
+  document.getElementById('card-dropdown-tools-btn').classList.toggle('d-none', !conn || (conn.protocol || 'rdp') !== 'rdp');
   const rect = triggerButton.getBoundingClientRect();
   // Fixed positioning is relative to the viewport, not any scrolling
   // ancestor - this is what actually escapes the grid container's
@@ -1606,6 +1702,24 @@ function openCardDropdown(triggerButton, connectionId) {
   cardDropdownMenu.style.right = `${window.innerWidth - rect.right}px`;
   cardDropdownMenu.classList.add('show');
 }
+
+document.getElementById('card-dropdown-tools-btn').addEventListener('click', () => {
+  document.getElementById('card-dropdown-main-view').classList.add('d-none');
+  document.getElementById('card-dropdown-tools-view').classList.remove('d-none');
+});
+
+document.getElementById('card-dropdown-tools-back-btn').addEventListener('click', () => {
+  document.getElementById('card-dropdown-tools-view').classList.add('d-none');
+  document.getElementById('card-dropdown-main-view').classList.remove('d-none');
+});
+
+document.getElementById('card-dropdown-tools-view').addEventListener('click', (e) => {
+  const toolKey = e.target.getAttribute('data-tool-key');
+  if (!toolKey) return;
+  const connectionId = cardDropdownConnectionId;
+  closeCardDropdown();
+  openToolsModal(connectionId, toolKey);
+});
 
 // 'error' events on <img> elements don't bubble, unlike click/change - so
 // this has to listen during the capture phase to catch it via delegation,
@@ -1620,10 +1734,24 @@ rowsEl.addEventListener('error', (e) => {
   }
 }, true);
 
+// Shared by the grid's click handler and the command palette - opens a
+// connection the same way regardless of where the request came from:
+// straight in if credentials are already available, or via the one-time
+// connect prompt if not.
+function connectToConnection(id, name) {
+  const conn = currentConns.find((c) => String(c.id) === String(id));
+  if (conn && needsCredentialPrompt(conn)) {
+    openConnectPrompt(id, name, conn);
+  } else {
+    openOrFocusSession(id, name);
+  }
+}
+
 rowsEl.addEventListener('click', async (e) => {
   const connectId = e.target.getAttribute('data-connect');
   const dropdownToggleId = e.target.getAttribute('data-dropdown-toggle');
   const reachabilityId = e.target.getAttribute('data-reachability-id');
+  const specsId = e.target.getAttribute('data-specs-id');
 
   if (dropdownToggleId) {
     const wasOpenForThisCard = cardDropdownMenu.classList.contains('show') && cardDropdownConnectionId === dropdownToggleId;
@@ -1637,14 +1765,14 @@ rowsEl.addEventListener('click', async (e) => {
     return;
   }
 
+  if (specsId) {
+    openSpecsPopover(e.target, specsId);
+    return;
+  }
+
   if (connectId) {
     const name = e.target.getAttribute('data-name');
-    const conn = currentConns.find((c) => String(c.id) === String(connectId));
-    if (conn && needsCredentialPrompt(conn)) {
-      openConnectPrompt(connectId, name, conn);
-    } else {
-      openOrFocusSession(connectId, name);
-    }
+    connectToConnection(connectId, name);
   }
 });
 
@@ -1705,6 +1833,301 @@ document.addEventListener('click', (e) => {
 });
 document.getElementById('grid-scroll-container').addEventListener('scroll', closeReachabilityHistoryPopover);
 window.addEventListener('resize', closeReachabilityHistoryPopover);
+
+// --- Hardware specs popover (RDP connections only, via WinRM) ---
+const specsPopover = document.getElementById('specs-popover');
+const specsPopoverName = document.getElementById('specs-popover-name');
+const specsPopoverStatus = document.getElementById('specs-popover-status');
+const specsPopoverBody = document.getElementById('specs-popover-body');
+const specsPopoverCachedNote = document.getElementById('specs-popover-cached-note');
+const specsPopoverRefreshBtn = document.getElementById('specs-popover-refresh-btn');
+let specsPopoverConnectionId = null;
+
+function renderSpecs(data) {
+  if (data.error) {
+    specsPopoverStatus.textContent = '';
+    specsPopoverBody.innerHTML = `<div class="specs-error"></div>`;
+    specsPopoverBody.querySelector('.specs-error').textContent = data.error;
+    specsPopoverCachedNote.textContent = '';
+    return;
+  }
+  specsPopoverStatus.textContent = '';
+  const rows = [
+    ['OS', `${data.os || 'Unknown'}${data.osVersion ? ` (${data.osVersion})` : ''}`],
+    ['CPU', data.cpu || 'Unknown'],
+    ['Cores / Threads', `${data.cores ?? '?'} / ${data.logicalProcessors ?? '?'}`],
+    ['Memory', data.totalMemoryGB != null ? `${data.totalMemoryGB} GB` : 'Unknown'],
+  ];
+  let html = rows.map(([label, value]) => `
+    <div class="specs-row"><span class="specs-label"></span><span class="specs-value"></span></div>
+  `).join('');
+  specsPopoverBody.innerHTML = html;
+  specsPopoverBody.querySelectorAll('.specs-row').forEach((row, i) => {
+    row.querySelector('.specs-label').textContent = rows[i][0];
+    row.querySelector('.specs-value').textContent = rows[i][1];
+  });
+  if (Array.isArray(data.disks) && data.disks.length) {
+    const diskHtml = data.disks.map(() => `
+      <div class="specs-row specs-disk-row"><span class="specs-label"></span><span class="specs-value"></span></div>
+    `).join('');
+    specsPopoverBody.insertAdjacentHTML('beforeend', diskHtml);
+    const diskRows = specsPopoverBody.querySelectorAll('.specs-disk-row');
+    data.disks.forEach((disk, i) => {
+      diskRows[i].querySelector('.specs-label').textContent = disk.drive;
+      diskRows[i].querySelector('.specs-value').textContent = `${disk.freeGB} GB free / ${disk.sizeGB} GB`;
+    });
+  }
+  specsPopoverCachedNote.textContent = data.cached ? 'Cached' : 'Just fetched';
+}
+
+async function loadSpecs(connectionId, forceRefresh) {
+  specsPopoverStatus.textContent = 'Fetching specs over WinRM…';
+  specsPopoverBody.innerHTML = '';
+  specsPopoverCachedNote.textContent = '';
+  const res = await fetch(`/api/connections/${connectionId}/specs${forceRefresh ? '?refresh=true' : ''}`);
+  const data = await res.json().catch(() => ({ error: 'Unexpected response from the server.' }));
+  // The popover may have been closed (or reopened for a different
+  // connection) while this request was in flight - only render if it's
+  // still showing the same one it was fetched for.
+  if (specsPopoverConnectionId !== connectionId) return;
+  renderSpecs(data);
+}
+
+function openSpecsPopover(nameEl, connectionId) {
+  const rect = nameEl.getBoundingClientRect();
+  specsPopover.style.top = `${rect.bottom + 6}px`;
+  specsPopover.style.left = `${Math.max(8, rect.left)}px`;
+  specsPopover.classList.add('show');
+
+  specsPopoverConnectionId = connectionId;
+  specsPopoverName.textContent = nameEl.textContent.trim();
+  loadSpecs(connectionId, false);
+}
+
+function closeSpecsPopover() {
+  specsPopover.classList.remove('show');
+  specsPopoverConnectionId = null;
+}
+
+specsPopoverRefreshBtn.addEventListener('click', () => {
+  if (specsPopoverConnectionId) loadSpecs(specsPopoverConnectionId, true);
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#specs-popover') && !e.target.matches('[data-specs-id]')) {
+    closeSpecsPopover();
+  }
+});
+document.getElementById('grid-scroll-container').addEventListener('scroll', closeSpecsPopover);
+window.addEventListener('resize', closeSpecsPopover);
+
+// --- Admin tools modal (RDP connections only, via WinRM) ---
+// Titles/columns mirror lib/winrmTools.js on the server - only the
+// display metadata needs to live here, never the PowerShell itself.
+const TOOL_META = {
+  eventViewer: { title: 'Event Viewer', columns: null },
+  processes: { title: 'Running Processes', columns: [['Name', 'Process'], ['Id', 'PID'], ['CPU', 'CPU (s)'], ['MemoryMB', 'Memory (MB)']] },
+  services: { title: 'Running Services', columns: [['DisplayName', 'Service'], ['Status', 'Status'], ['StartType', 'Startup']] },
+  diskUsage: { title: 'Disk Usage', columns: [['DriveLetter', 'Drive'], ['FileSystemLabel', 'Label'], ['SizeGB', 'Size (GB)'], ['FreeGB', 'Free (GB)'], ['PercentFree', '% Free']] },
+  installedSoftware: { title: 'Installed Software', columns: [['Name', 'Name'], ['Version', 'Version'], ['Publisher', 'Publisher'], ['InstallDate', 'Installed']] },
+  networkConfig: { title: 'Network Configuration', columns: [['adapter', 'Adapter'], ['ipv4', 'IPv4'], ['ipv6', 'IPv6'], ['gateway', 'Gateway'], ['dns', 'DNS']] },
+  windowsUpdate: { title: 'Windows Update Status', columns: null },
+  localUsers: { title: 'Local User Accounts', columns: [['Name', 'Username'], ['Enabled', 'Enabled'], ['LastLogon', 'Last Logon']] },
+};
+
+const toolsModalBackdrop = document.getElementById('tools-modal-backdrop');
+const toolsModalTitle = document.getElementById('tools-modal-title');
+const toolsModalStatus = document.getElementById('tools-modal-status');
+const toolsModalBody = document.getElementById('tools-modal-body');
+const eventViewerToolbar = document.getElementById('event-viewer-toolbar');
+const eventViewerLogSelect = document.getElementById('event-viewer-log-select');
+const eventViewerLevelSelect = document.getElementById('event-viewer-level-select');
+let toolsModalConnectionId = null;
+let toolsModalToolKey = null;
+let eventViewerRawEvents = []; // last-fetched events for the currently selected log, filtered client-side by level so switching the level filter needs no extra round trip
+
+function renderGenericTable(columns, rows) {
+  if (!rows.length) {
+    toolsModalBody.innerHTML = '<div class="text-secondary small">No data returned.</div>';
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'table table-sm table-hover';
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr>${columns.map(([, label]) => `<th></th>`).join('')}</tr>`;
+  thead.querySelectorAll('th').forEach((th, i) => { th.textContent = columns[i][1]; });
+  const tbody = document.createElement('tbody');
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    columns.forEach(([key]) => {
+      const td = document.createElement('td');
+      const value = row[key];
+      td.textContent = value === null || value === undefined || value === '' ? '—' : String(value);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  toolsModalBody.innerHTML = '';
+  toolsModalBody.appendChild(table);
+}
+
+function renderEventViewer() {
+  const level = eventViewerLevelSelect.value;
+  const events = level ? eventViewerRawEvents.filter((ev) => ev.level === level) : eventViewerRawEvents;
+  if (!events.length) {
+    toolsModalBody.innerHTML = '<div class="text-secondary small">No events match.</div>';
+    return;
+  }
+  const levelBadge = { Error: 'danger', Warning: 'warning', Information: 'secondary' };
+  const table = document.createElement('table');
+  table.className = 'table table-sm table-hover';
+  table.innerHTML = '<thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Event ID</th><th>Message</th></tr></thead>';
+  const tbody = document.createElement('tbody');
+  events.forEach((ev) => {
+    const tr = document.createElement('tr');
+    const badgeClass = levelBadge[ev.level] || 'secondary';
+    tr.innerHTML = `<td></td><td><span class="badge text-bg-${badgeClass}"></span></td><td></td><td></td><td></td>`;
+    const cells = tr.querySelectorAll('td');
+    cells[0].textContent = ev.time || '';
+    cells[1].querySelector('span').textContent = ev.level || '';
+    cells[2].textContent = ev.source || '';
+    cells[3].textContent = ev.id ?? '';
+    cells[4].textContent = ev.message || '';
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  toolsModalBody.innerHTML = '';
+  toolsModalBody.appendChild(table);
+}
+
+async function loadEventViewerLogList(connectionId) {
+  eventViewerLogSelect.innerHTML = '<option>Loading logs…</option>';
+  eventViewerLogSelect.disabled = true;
+  const res = await fetch(`/api/connections/${connectionId}/eventlogs`);
+  const data = await res.json().catch(() => ({ error: 'Unexpected response from the server.' }));
+  if (toolsModalConnectionId !== connectionId || toolsModalToolKey !== 'eventViewer') return;
+
+  if (data.error) {
+    eventViewerLogSelect.innerHTML = '<option>—</option>';
+    toolsModalStatus.textContent = '';
+    toolsModalBody.innerHTML = `<div class="specs-error"></div>`;
+    toolsModalBody.querySelector('.specs-error').textContent = data.error;
+    return;
+  }
+
+  const standardLogs = Array.isArray(data.standardLogs) ? data.standardLogs : [];
+  const otherLogs = Array.isArray(data.otherLogs) ? data.otherLogs : [];
+  const optionHtml = (log) => `<option value="${escapeHtml(log.name)}">${escapeHtml(log.name)} (${log.recordCount})</option>`;
+  eventViewerLogSelect.innerHTML =
+    `<optgroup label="Windows Logs">${standardLogs.map(optionHtml).join('')}</optgroup>` +
+    (otherLogs.length ? `<optgroup label="Applications and Services Logs">${otherLogs.map(optionHtml).join('')}</optgroup>` : '');
+  eventViewerLogSelect.disabled = false;
+
+  // "System" is the closest thing to a sensible default first view - the
+  // one most people reach for first in the real Event Viewer too.
+  const defaultLog = standardLogs.find((l) => l.name === 'System') ? 'System' : (standardLogs[0] || {}).name;
+  if (defaultLog) {
+    eventViewerLogSelect.value = defaultLog;
+    loadEventViewerEvents(connectionId, defaultLog);
+  }
+}
+
+async function loadEventViewerEvents(connectionId, logName) {
+  toolsModalStatus.textContent = `Fetching "${logName}" over WinRM…`;
+  toolsModalBody.innerHTML = '';
+  const res = await fetch(`/api/connections/${connectionId}/eventlogs/events?log=${encodeURIComponent(logName)}`);
+  const data = await res.json().catch(() => ({ error: 'Unexpected response from the server.' }));
+  if (toolsModalConnectionId !== connectionId || toolsModalToolKey !== 'eventViewer' || eventViewerLogSelect.value !== logName) return;
+
+  toolsModalStatus.textContent = '';
+  if (data.error) {
+    toolsModalBody.innerHTML = `<div class="specs-error"></div>`;
+    toolsModalBody.querySelector('.specs-error').textContent = data.error;
+    eventViewerRawEvents = [];
+    return;
+  }
+  eventViewerRawEvents = Array.isArray(data.events) ? data.events : [];
+  renderEventViewer();
+}
+
+eventViewerLogSelect.addEventListener('change', () => {
+  if (toolsModalConnectionId) loadEventViewerEvents(toolsModalConnectionId, eventViewerLogSelect.value);
+});
+
+eventViewerLevelSelect.addEventListener('change', renderEventViewer);
+
+function renderWindowsUpdate(data) {
+  // Reuses the same row/label/value classes the specs popover already
+  // uses - structurally the same thing, a short list of key facts.
+  const rows = [
+    ['Last installed update', data.lastHotfixId ? `${data.lastHotfixId}${data.lastHotfixDate ? ` (${data.lastHotfixDate})` : ''}` : 'Unknown'],
+    ['Reboot pending', data.pendingReboot ? 'Yes' : 'No'],
+  ];
+  toolsModalBody.innerHTML = rows.map(() => `<div class="specs-row"><span class="specs-label"></span><span class="specs-value"></span></div>`).join('');
+  toolsModalBody.querySelectorAll('.specs-row').forEach((row, i) => {
+    row.querySelector('.specs-label').textContent = rows[i][0];
+    row.querySelector('.specs-value').textContent = rows[i][1];
+  });
+}
+
+function renderToolResult(toolKey, data) {
+  if (data.error) {
+    toolsModalStatus.textContent = '';
+    toolsModalBody.innerHTML = `<div class="specs-error"></div>`;
+    toolsModalBody.querySelector('.specs-error').textContent = data.error;
+    return;
+  }
+  toolsModalStatus.textContent = '';
+  if (toolKey === 'windowsUpdate') return renderWindowsUpdate(data);
+  renderGenericTable(TOOL_META[toolKey].columns, Array.isArray(data) ? data : []);
+}
+
+async function loadToolData(connectionId, toolKey) {
+  toolsModalStatus.textContent = 'Running over WinRM…';
+  toolsModalBody.innerHTML = '';
+  const res = await fetch(`/api/connections/${connectionId}/tools/${toolKey}`);
+  const data = await res.json().catch(() => ({ error: 'Unexpected response from the server.' }));
+  // The modal may have been closed (or reopened for a different tool or
+  // connection) while this request was in flight.
+  if (toolsModalConnectionId !== connectionId || toolsModalToolKey !== toolKey) return;
+  renderToolResult(toolKey, data);
+}
+
+function openToolsModal(connectionId, toolKey) {
+  toolsModalConnectionId = connectionId;
+  toolsModalToolKey = toolKey;
+  toolsModalTitle.textContent = TOOL_META[toolKey].title;
+  toolsModalBackdrop.classList.add('open');
+  eventViewerLevelSelect.value = '';
+  eventViewerRawEvents = [];
+  if (toolKey === 'eventViewer') {
+    eventViewerToolbar.classList.remove('d-none');
+    loadEventViewerLogList(connectionId);
+  } else {
+    eventViewerToolbar.classList.add('d-none');
+    loadToolData(connectionId, toolKey);
+  }
+}
+
+document.getElementById('tools-modal-close-btn').addEventListener('click', () => {
+  toolsModalBackdrop.classList.remove('open');
+  toolsModalConnectionId = null;
+  toolsModalToolKey = null;
+});
+
+document.getElementById('tools-modal-refresh-btn').addEventListener('click', () => {
+  if (!toolsModalConnectionId || !toolsModalToolKey) return;
+  if (toolsModalToolKey === 'eventViewer') {
+    // Refreshes just the currently selected log's events, not the whole
+    // log list - the list of available logs changes far less often than
+    // what's actually in one of them.
+    if (eventViewerLogSelect.value) loadEventViewerEvents(toolsModalConnectionId, eventViewerLogSelect.value);
+  } else {
+    loadToolData(toolsModalConnectionId, toolsModalToolKey);
+  }
+});
 
 // --- Bulk selection ---
 const bulkActionBar = document.getElementById('bulk-action-bar');
@@ -2421,6 +2844,183 @@ document.addEventListener('keydown', (e) => {
     enableKeyboardForwarding(session); // don't leave forwarding disabled if the read itself failed
   });
 }, true); // true = capture phase, see comment above
+
+const commandPaletteBackdrop = document.getElementById('command-palette-backdrop');
+const commandPaletteInput = document.getElementById('command-palette-input');
+const commandPaletteResults = document.getElementById('command-palette-results');
+let paletteCurrentResults = [];
+let paletteSelectedIndex = 0;
+
+// Rebuilt fresh every time the palette opens (and on every keystroke, since
+// it's cheap) rather than kept as static state - several of these depend on
+// things that can change between one opening and the next: which admin
+// permissions this account has, whether a session is currently active,
+// whether a split is in progress.
+function getPaletteActions() {
+  const actions = [
+    { icon: '➕', label: 'Add connection', run: () => openModal(null) },
+    { icon: '⚙️', label: 'Settings', run: () => document.getElementById('settings-btn').click() },
+    { icon: '🔓', label: 'Log out', run: () => document.getElementById('logout-btn').click() },
+  ];
+  if (!document.getElementById('twofa-settings-btn').classList.contains('d-none')) {
+    actions.push({ icon: '🔐', label: 'Two-factor authentication', run: () => document.getElementById('twofa-settings-btn').click() });
+  }
+  if (!document.getElementById('admin-btn').classList.contains('d-none')) {
+    actions.push({ icon: '🛡️', label: 'Admin panel', run: () => document.getElementById('admin-btn').click() });
+  }
+  if (activeKey !== 'list') {
+    actions.push({ icon: '☰', label: 'Back to connections list', run: () => showView('list') });
+  }
+  if (splitKeys) {
+    actions.push({ icon: '⊟', label: 'Exit split view', run: () => showView(activeKey) });
+  }
+  return actions;
+}
+
+function buildPaletteResults(query) {
+  const q = query.trim().toLowerCase();
+  const connectionResults = currentConns
+    .filter((c) => !q || c.name.toLowerCase().includes(q) || c.hostname.toLowerCase().includes(q) || (c.tags || []).some((t) => t.toLowerCase().includes(q)))
+    .map((c) => ({
+      icon: c.icon || (c.protocol === 'ssh' ? '⌨️' : '🖥️'),
+      label: c.name,
+      hint: sessions.has(String(c.id)) ? 'Open' : c.hostname,
+      run: () => connectToConnection(c.id, c.name),
+    }));
+  const actionResults = getPaletteActions().filter((a) => !q || a.label.toLowerCase().includes(q));
+  // Connections first - in normal use there are far more of them than
+  // static actions, and they're what you're most often reaching for.
+  return [...connectionResults, ...actionResults].slice(0, 20);
+}
+
+function renderPaletteResults() {
+  commandPaletteResults.innerHTML = '';
+  if (!paletteCurrentResults.length) {
+    commandPaletteResults.innerHTML = '<div class="command-palette-empty">No matches</div>';
+    return;
+  }
+  paletteCurrentResults.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'command-palette-row' + (i === paletteSelectedIndex ? ' selected' : '');
+    row.innerHTML = `<span class="cp-icon">${r.icon}</span><span class="cp-label"></span>${r.hint ? '<span class="cp-hint"></span>' : ''}`;
+    row.querySelector('.cp-label').textContent = r.label;
+    if (r.hint) row.querySelector('.cp-hint').textContent = r.hint;
+    // mousedown + preventDefault (rather than click) so clicking a result
+    // doesn't first blur the input - simpler than juggling focus back
+    // afterward.
+    row.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      executePaletteResult(i);
+    });
+    row.addEventListener('mousemove', () => {
+      if (paletteSelectedIndex !== i) {
+        paletteSelectedIndex = i;
+        renderPaletteResults();
+      }
+    });
+    commandPaletteResults.appendChild(row);
+  });
+}
+
+function executePaletteResult(index) {
+  const result = paletteCurrentResults[index];
+  if (!result) return;
+  closeCommandPalette();
+  result.run();
+}
+
+function openCommandPalette() {
+  // Otherwise Guacamole's own listener on document (still watching every
+  // keystroke while a session has focus) intercepts and preventDefaults
+  // each one to forward it to the remote, and the palette's input never
+  // sees a single character typed into it. Safe to call even when no
+  // session is active - it's already a no-op in that case, the same as
+  // it is when switching to the connections list view.
+  disableKeyboardForwarding();
+  commandPaletteInput.value = '';
+  paletteCurrentResults = buildPaletteResults('');
+  paletteSelectedIndex = 0;
+  renderPaletteResults();
+  commandPaletteBackdrop.classList.add('open');
+  commandPaletteInput.focus();
+}
+
+function closeCommandPalette() {
+  commandPaletteBackdrop.classList.remove('open');
+}
+
+// Used specifically for Escape / clicking outside the palette - cases
+// where nothing else is about to take over keyboard input, so it's on
+// this function to hand it back to whatever session was focused before
+// the palette opened.
+//
+// Selecting an actual result deliberately does NOT go through this -
+// executePaletteResult calls the bare closeCommandPalette() above instead,
+// letting the chosen action's own function (showView, openOrFocusSession,
+// or opening a different modal like Settings) decide the correct
+// keyboard-forwarding state afterward. Restoring it here unconditionally
+// would be wrong for anything that opens another modal on top - typing
+// into Settings, for instance, would otherwise leak into the
+// now-background remote session instead of reaching the modal's own
+// inputs, the exact same class of bug this whole fix started from.
+function cancelCommandPalette() {
+  closeCommandPalette();
+  const session = sessions.get(activeKey);
+  if (session) enableKeyboardForwarding(session);
+}
+
+commandPaletteInput.addEventListener('input', () => {
+  paletteCurrentResults = buildPaletteResults(commandPaletteInput.value);
+  paletteSelectedIndex = 0;
+  renderPaletteResults();
+});
+
+commandPaletteInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    cancelCommandPalette();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (paletteCurrentResults.length) {
+      paletteSelectedIndex = (paletteSelectedIndex + 1) % paletteCurrentResults.length;
+      renderPaletteResults();
+    }
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (paletteCurrentResults.length) {
+      paletteSelectedIndex = (paletteSelectedIndex - 1 + paletteCurrentResults.length) % paletteCurrentResults.length;
+      renderPaletteResults();
+    }
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    executePaletteResult(paletteSelectedIndex);
+  }
+});
+
+// Closes on a click outside the card itself (i.e. on the dimmed backdrop).
+commandPaletteBackdrop.addEventListener('mousedown', (e) => {
+  if (e.target === commandPaletteBackdrop) cancelCommandPalette();
+});
+
+// Capture phase, exactly like the paste handler above - guaranteed to see
+// (and be able to fully suppress) this keystroke before Guacamole's own
+// keyboard listener gets a chance to forward it to a remote session,
+// regardless of source-file ordering relative to sharedKeyboard's own
+// creation below.
+document.addEventListener('keydown', (e) => {
+  const isPaletteShortcut = (e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'k';
+  if (!isPaletteShortcut) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (commandPaletteBackdrop.classList.contains('open')) {
+    cancelCommandPalette();
+  } else if (!document.querySelector('.app-overlay.open')) {
+    // Deliberately doesn't stack on top of another already-open modal
+    // (Settings, Admin, Add connection, etc.) - avoids two overlays'
+    // worth of keyboard handling and Escape behavior colliding.
+    openCommandPalette();
+  }
+}, true);
 
 const sharedKeyboard = new Guacamole.Keyboard(document);
 

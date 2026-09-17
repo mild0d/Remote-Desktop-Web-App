@@ -7,6 +7,121 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.21.0] - 2026-09-16
+
+### Changed
+- Event Viewer is now a real log browser instead of a fixed System+
+  Application merge: a dropdown lists the 5 standard Windows Logs
+  (Application, Security, Setup, System, Forwarded Events, shown even
+  if empty, matching the real Event Viewer's left tree) plus up to 25
+  active Applications and Services logs, sorted by how much is actually
+  in them. Selecting one fetches its most recent 100 events. A second
+  dropdown filters by level (Error/Warning/Information) without a
+  network round trip, since it's filtering what's already been fetched.
+  Defaults to the System log on open, matching what most people reach
+  for first.
+
+### Security
+- The selected log name is user-controlled input that gets embedded
+  directly into a PowerShell command run with real admin credentials on
+  the target machine - a genuine command-injection surface, not just a
+  cosmetic validation concern. It's checked against a strict allowlist
+  (letters/digits/spaces/hyphens/underscores/forward-slashes only,
+  matching real Windows log naming) before ever reaching that command,
+  with PowerShell single-quote escaping as defense in depth on top of
+  the allowlist rather than instead of it. Confirmed directly with a
+  handful of real injection attempts, not just written and assumed
+  correct.
+
+### Internal
+- Event Viewer moved out of the generic tools map (lib/winrmTools.js)
+  into two dedicated routes (GET /:id/eventlogs and GET
+  /:id/eventlogs/events) - it needs a different query depending on
+  which log gets picked, which doesn't fit that map's one-fixed-script-
+  per-tool shape. The other seven tools from v1.20.0 are unchanged.
+
+## [1.20.0] - 2026-09-16
+
+### Added
+- A "Tools ▸" entry in each RDP connection's dropdown menu (Edit/Share/
+  Delete), opening a list of eight read-only admin tools that run over
+  the same WinRM connection as the hardware specs feature:
+  Event Viewer (recent System/Application log entries), Running
+  Processes, Running Services, Disk Usage, Installed Software, Network
+  Configuration, Windows Update Status, and Local User Accounts. Each
+  opens in its own modal with a Refresh button.
+  Deliberately not cached, unlike hardware specs - process and service
+  lists are live, fast-changing state where a stale cached view would
+  be actively misleading rather than just a little out of date.
+  All read-only - nothing here changes anything on the remote machine.
+  Built on a new general-purpose WinRM runner (lib/winrmRun.js +
+  lib/winrm_run.py) that executes an arbitrary PowerShell script rather
+  than one hardcoded query - the existing, already-tested hardware
+  specs code (lib/winrmSpecs.js + lib/winrm_specs.py) is untouched by
+  this, kept as its own separate path rather than risk regressing
+  something already confirmed working end-to-end.
+  No Dockerfile changes needed - this reuses the Python3/pywinrm
+  already added in v1.19.0 for hardware specs.
+
+## [1.19.0] - 2026-09-16
+
+### Added
+- Hardware specs popup for RDP connections: click a connection's name
+  on its card to see OS, CPU, memory, and disk usage, fetched live over
+  WinRM. Results are cached for 10 minutes per connection to avoid
+  re-querying the target on every click; a Refresh button in the popup
+  bypasses the cache.
+  Requires WinRM enabled on the target Windows machine (`winrm
+  quickconfig`), reachable on port 5985 (HTTP only for now - no 5986/
+  HTTPS or custom-port support yet), and uses NTLM auth with whichever
+  credentials the connection would normally use to actually connect
+  (its own saved password, falling back to the account's default RDP
+  credentials) - the same identity, not a separate one to configure.
+  Not available for SSH connections.
+  Implemented via a small Python helper (lib/winrm_specs.py) using
+  pywinrm - the same underlying library Ansible itself uses for WinRM,
+  chosen over the much younger, single-maintainer Node options
+  available for this. Credentials are passed to it over stdin rather
+  than as command-line arguments, so they never appear in `ps aux` or
+  /proc/<pid>/cmdline. Requires rebuilding the Docker image
+  (`docker compose up -d --build`) - adds Python3 and pywinrm to it.
+  Confirmed pywinrm's own native-dependency chain (cryptography, cffi,
+  pyspnego) all publish prebuilt musllinux wheels before adding this,
+  so the image doesn't need a C/Rust build toolchain for it.
+
+## [1.18.1] - 2026-09-16
+
+### Fixed
+- Command palette couldn't be typed into while opened from inside an
+  active session - Guacamole's own keyboard listener was still
+  forwarding every keystroke to the remote session and intercepting it
+  before it ever reached the palette's search input. Fixed by disabling
+  forwarding while the palette is open, the same mechanism already used
+  around the SSH/RDP paste simulation.
+  Restoring it back on close needed care: only cancelling the palette
+  (Escape, or clicking outside it) restores forwarding to the
+  background session. Selecting an actual result does not - opening
+  Settings (or Admin, or Add connection) from the palette while a
+  session sits behind it needs that background session's forwarding to
+  stay off, or typing into the newly opened modal's own fields would
+  leak into the remote session instead - the identical bug this fix
+  started from, just relocated.
+
+## [1.18.0] - 2026-09-16
+
+### Added
+- Command palette: press Ctrl+K (or Cmd+K on Mac) anywhere in the app to
+  search connections by name, hostname, or tag, and jump straight to
+  one - or run a quick action (Add connection, Settings, 2FA, Admin
+  panel if you have access, Log out, Back to connections list, Exit
+  split view) without reaching for the mouse. Arrow keys move the
+  selection, Enter opens it, Escape closes the palette.
+  Works from both the connections list and from inside an active
+  session - registered the same way as the SSH/RDP paste shortcut fix
+  from v1.14.3, so pressing Ctrl+K while a remote session is focused
+  opens the palette instead of forwarding the keystroke into the
+  remote session.
+
 ## [1.17.0] - 2026-09-16
 
 ### Added

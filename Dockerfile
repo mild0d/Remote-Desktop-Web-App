@@ -9,7 +9,15 @@ ENV NODE_ENV=production
 # su-exec is the standard, lightweight Alpine tool for dropping from root to
 # another user before exec'ing the final process - much smaller than gosu,
 # and the normal recommended approach for Alpine-based images specifically.
-RUN apk add --no-cache su-exec
+# python3/py3-pip: needed only for lib/winrm_specs.py, which fetches
+# hardware/OS specs from RDP targets over WinRM. pywinrm's own dependency
+# chain (cryptography, cffi, pyspnego) all publish prebuilt musllinux
+# wheels, confirmed directly against PyPI's file listings before adding
+# this - so no compiler or -dev headers are needed here, keeping the
+# image from ballooning with a build toolchain that would otherwise only
+# be used once at build time.
+RUN apk add --no-cache su-exec python3 py3-pip && \
+    pip3 install --no-cache-dir --break-system-packages pywinrm
 
 WORKDIR /app
 COPY package*.json ./
