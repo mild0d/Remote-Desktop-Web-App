@@ -7,6 +7,22 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.21.1] - 2026-09-16
+
+### Changed
+- README split into a concise landing page (install/setup/quick start)
+  plus 8 topic-specific pages under docs/: session-features,
+  managing-connections, monitoring-and-admin-tools, ssh,
+  accounts-and-security, sso, deployment, and troubleshooting. The
+  README had grown to nearly 1000 lines as features accumulated
+  throughout this project's development - every word of the original
+  content was preserved and redistributed by topic, none of it
+  rewritten or condensed. Verified directly: every heading from the
+  original README appears somewhere in the new structure, and the one
+  internal cross-reference between sections was updated to a
+  cross-file link now that the two pieces live in different files.
+  No code changes.
+
 ## [1.21.0] - 2026-09-16
 
 ### Changed
