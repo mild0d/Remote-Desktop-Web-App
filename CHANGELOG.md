@@ -7,6 +7,61 @@ follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 - **MINOR** - new features, backward-compatible
 - **PATCH** - bug fixes, backward-compatible
 
+## [1.24.0] - 2026-09-17
+
+### Added
+- "Export as .rdp file" in each RDP connection's dropdown menu -
+  generates a standard Windows .rdp file (the same plain-text format
+  Remote Desktop Connection/mstsc.exe itself reads and saves) so a
+  connection can be opened directly in a native RDP client outside the
+  browser. Entirely client-side, no backend request involved, since
+  every field needed is already present in the browser's own connection
+  list.
+  Never includes a password - a .rdp file's own password field is only
+  decryptable on the exact Windows machine/account that encrypted it in
+  the first place, so it wouldn't travel usefully anyway, and writing a
+  decrypted password into a downloadable file would work against
+  everything already careful about credential handling elsewhere in
+  this app. RDP prompts for credentials normally when the file opens.
+  Not available for SSH connections - there's no equivalent standard
+  "double-click to connect" file format for SSH the way .rdp is for RDP.
+
+## [1.23.2] - 2026-09-17
+
+### Removed
+- The "Launch app" feature added in 1.24.0 (PowerShell/Command Prompt/
+  Task Manager presets and a custom-launch option in the Tools menu,
+  using RDP's `initial-program` setting) - didn't behave as expected
+  against a real target (connected normally instead of launching the
+  requested program) and was removed rather than debugged further.
+  This version reverts cleanly to the 1.23.1 codebase - confirmed
+  directly against that state rather than manually removing the
+  feature's code piece by piece, to avoid any risk of stray leftover
+  fragments.
+
+## [1.23.1] - 2026-09-17
+
+### Changed
+- docs/monitoring-and-admin-tools.md: replaced the brief 3-bullet WinRM
+  setup list (previously repeated/abbreviated under hardware specs) with
+  a dedicated "Setting up WinRM" section that both hardware specs and
+  the admin tools now link back to. Covers the actual setup steps in
+  more depth, plus two real-world gotchas that weren't documented
+  before:
+  - The "Public" network profile blocking `winrm quickconfig`'s
+    automatic firewall exception, with the manual `netsh` command to
+    add it anyway
+  - UAC remote restrictions stripping admin rights from local (non
+    built-in-Administrator) accounts over WinRM specifically - flagged
+    as the single most common reason WinRM looks correctly configured
+    but tools still fail with access-denied errors, since it's easy to
+    set up everything else correctly and still hit this
+  Also adds a way to verify WinRM works independent of this app before
+  assuming a tool failure is this app's fault, and notes that some
+  hardened AD environments disable NTLM entirely via group policy,
+  which would block every WinRM feature here regardless of
+  configuration. No code changes.
+
 ## [1.23.0] - 2026-09-17
 
 ### Added

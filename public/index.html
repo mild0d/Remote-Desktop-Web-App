@@ -451,6 +451,7 @@
   <div id="card-dropdown-main-view">
     <button id="card-dropdown-edit-btn">Edit</button>
     <button id="card-dropdown-share-btn">Share</button>
+    <button id="card-dropdown-export-rdp-btn" class="d-none">Export as .rdp file</button>
     <button id="card-dropdown-tools-btn" class="d-none">Tools ▸</button>
     <button id="card-dropdown-delete-btn" class="text-danger">Delete</button>
   </div>
@@ -1760,7 +1761,9 @@ function closeCardDropdown() {
 function openCardDropdown(triggerButton, connectionId) {
   cardDropdownConnectionId = connectionId;
   const conn = currentConns.find((c) => String(c.id) === String(connectionId));
-  document.getElementById('card-dropdown-tools-btn').classList.toggle('d-none', !conn || (conn.protocol || 'rdp') !== 'rdp');
+  const isRdp = Boolean(conn) && (conn.protocol || 'rdp') === 'rdp';
+  document.getElementById('card-dropdown-tools-btn').classList.toggle('d-none', !isRdp);
+  document.getElementById('card-dropdown-export-rdp-btn').classList.toggle('d-none', !isRdp);
   const rect = triggerButton.getBoundingClientRect();
   // Fixed positioning is relative to the viewport, not any scrolling
   // ancestor - this is what actually escapes the grid container's
@@ -2367,6 +2370,65 @@ document.getElementById('card-dropdown-share-btn').addEventListener('click', () 
   const id = cardDropdownConnectionId;
   closeCardDropdown();
   openShareModal({ singleId: id });
+});
+
+// Builds a standard Windows .rdp file (the same plain-text key:type:value
+// format Remote Desktop Connection/mstsc.exe itself reads and saves) so a
+// connection can be opened directly in a native RDP client outside the
+// browser. Entirely client-side - every field used here is already
+// present in currentConns, so no backend request is needed at all.
+//
+// Deliberately never includes a password. A .rdp file's own password
+// field is only decryptable on the exact Windows machine/user account
+// that encrypted it in the first place, so it wouldn't travel usefully
+// anyway - and even if it could, writing a decrypted password into a
+// downloadable file would work against everything already careful about
+// credential handling elsewhere in this app. RDP will just prompt for
+// credentials normally when the file is opened.
+function buildRdpFileContent(conn) {
+  const lines = [`full address:s:${conn.hostname}:${conn.port}`];
+  if (conn.username) lines.push(`username:s:${conn.username}`);
+  if (conn.domain) lines.push(`domain:s:${conn.domain}`);
+  lines.push(`session bpp:i:${conn.color_depth || 16}`);
+  // 0 = connect without warning, 2 = warn about certificate problems
+  // (Windows' own default) - mirrors this connection's own ignore_cert
+  // setting rather than always picking one or the other.
+  lines.push(`authentication level:i:${conn.ignore_cert ? 0 : 2}`);
+  if (conn.security === 'nla') lines.push('enablecredsspsupport:i:1');
+  lines.push(
+    'screen mode id:i:2',
+    'redirectclipboard:i:1',
+    'redirectprinters:i:1',
+    'autoreconnection enabled:i:1',
+    'negotiate security layer:i:1',
+    'prompt for credentials:i:0',
+  );
+  return lines.join('\r\n') + '\r\n';
+}
+
+function exportConnectionAsRdpFile(connectionId) {
+  const conn = currentConns.find((c) => String(c.id) === String(connectionId));
+  if (!conn) return;
+  const content = buildRdpFileContent(conn);
+  // Windows filenames can't contain these characters - stripping them
+  // rather than rejecting the export entirely, since the connection name
+  // itself is free text and may well contain one.
+  const safeName = (conn.name || 'connection').replace(/[<>:"/\\|?*]/g, '').trim() || 'connection';
+  const blob = new Blob([content], { type: 'application/x-rdp' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safeName}.rdp`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('card-dropdown-export-rdp-btn').addEventListener('click', () => {
+  const id = cardDropdownConnectionId;
+  closeCardDropdown();
+  exportConnectionAsRdpFile(id);
 });
 
 document.getElementById('bulk-share-btn').addEventListener('click', () => {

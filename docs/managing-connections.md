@@ -126,6 +126,19 @@ download/upload round trip. They'll use their own credentials to connect
 (their own default credentials, or their own per-connection override) —
 sharing a connection never shares your password.
 
+## Export as .rdp file (RDP only)
+
+Click the **⋮** menu on any RDP connection card → **Export as .rdp
+file** to download it as a standard Windows .rdp file - the same
+plain-text format Remote Desktop Connection (mstsc.exe) itself reads
+and saves. Double-clicking the downloaded file opens that connection
+directly in Windows' native RDP client, outside the browser entirely.
+
+Like every other export in this app, it never includes a password -
+RDP will just prompt for credentials normally when you open the file.
+Not available for SSH connections, since there's no equivalent
+standard file format for SSH the way .rdp is for RDP.
+
 ## Export / Import connections
 
 **⬇️ Export** downloads a JSON file of all your saved connections.
