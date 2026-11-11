@@ -10,9 +10,9 @@
   (function () {
     try {
       var saved = localStorage.getItem('theme') || 'dark';
-      var validThemes = ['dark', 'light', 'win11', 'win10', 'winxp'];
+      var validThemes = ['dark', 'light', 'win11', 'win10', 'winxp', 'fluent-dark', 'fluent-light'];
       if (validThemes.indexOf(saved) === -1) saved = 'dark';
-      var bsBase = saved === 'dark' ? 'dark' : 'light'; // Windows-style themes are built on a light Bootstrap base with overrides layered on top
+      var bsBase = (saved === 'dark' || saved === 'fluent-dark') ? 'dark' : 'light'; // Windows-style themes are built on a light Bootstrap base with overrides layered on top
       document.documentElement.setAttribute('data-bs-theme', bsBase);
       document.documentElement.setAttribute('data-theme', saved);
     } catch (err) { /* private browsing, storage disabled, etc. - falls back to the default dark theme already set above */ }
@@ -364,6 +364,209 @@
   [data-theme="winxp"] .tab-btn { color: #fff; }
   [data-theme="winxp"] .tab-btn:hover { color: #000; } /* without this, the rule above (equal specificity, later in the stylesheet) wins the tie against .tab-btn:hover's own color change, leaving white text on the hover state's white background - invisible */
   [data-theme="winxp"] .tab-btn.active-tab { background: #ece9d8; color: #000; box-shadow: none; }
+
+  /* ============================================================
+     Fluent (RAWeb-inspired): two selectable themes, "fluent-dark" and
+     "fluent-light". Purely visual - same layout, same tabs, same
+     features as every other theme; only colors, corner radius, type
+     weight, borders, and shadows change. Modeled on the Fluent 2 /
+     WinUI 3 look of RAWeb (github.com/kimmknight/raweb): charcoal or
+     near-white surfaces, subtle 1px borders, 4px controls / 8px cards,
+     green accent, and the WinUI-style bottom-edge accent on focused
+     inputs. Everything is scoped under [data-theme^="fluent-"], so it
+     can't leak into Dark, Light, or the Windows themes.
+     ============================================================ */
+
+  [data-theme^="fluent-"] {
+    --bs-border-radius: 4px; --bs-border-radius-sm: 4px;
+    --bs-border-radius-lg: 8px; --bs-border-radius-xl: 8px;
+    --bs-font-sans-serif: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  [data-theme^="fluent-"] body { font-family: var(--bs-font-sans-serif); }
+
+  /* --- Fluent Dark: palette sampled from RAWeb's dark mode --- */
+  [data-theme="fluent-dark"] {
+    --bs-body-bg: #292929; --bs-body-bg-rgb: 41, 41, 41;
+    --bs-body-color: #f5f5f5; --bs-body-color-rgb: 245, 245, 245;
+    --bs-secondary-color: rgba(255, 255, 255, 0.62);
+    --bs-secondary-bg: #212121; --bs-tertiary-bg: #333333; --bs-tertiary-bg-rgb: 51, 51, 51;
+    --bs-border-color: #3a3a3a; --bs-border-color-translucent: rgba(255, 255, 255, 0.08);
+    --bs-primary: #6ad46f; --bs-primary-rgb: 106, 212, 111;
+    --bs-link-color: #6ad46f; --bs-link-color-rgb: 106, 212, 111;
+    --bs-link-hover-color: #8be690; --bs-link-hover-color-rgb: 139, 230, 144;
+    --fl-titlebar: #212121;
+    --fl-card: #363636; --fl-card-hover: #3b3b3b; --fl-card-border: #404040;
+    --fl-flyout: #2f2f2f;
+    --fl-control: #383838; --fl-control-hover: #424242; --fl-control-active: #333333;
+    --fl-control-border: #474747; --fl-control-border-strong: #8d8d8d;
+    --fl-accent: #6ad46f; --fl-accent-hover: #7fdc84; --fl-accent-active: #58bd5d; --fl-accent-fg: #0b2a0d;
+    --fl-shadow-card: 0 2px 6px rgba(0, 0, 0, 0.28);
+    --fl-shadow-card-hover: 0 6px 18px rgba(0, 0, 0, 0.4);
+    --fl-shadow-flyout: 0 8px 28px rgba(0, 0, 0, 0.5);
+    --fl-scrim: rgba(0, 0, 0, 0.5);
+  }
+
+  /* --- Fluent Light: palette sampled from RAWeb's light mode --- */
+  [data-theme="fluent-light"] {
+    --bs-body-bg: #fafafa; --bs-body-bg-rgb: 250, 250, 250;
+    --bs-body-color: #1b1b1b; --bs-body-color-rgb: 27, 27, 27;
+    --bs-secondary-color: rgba(0, 0, 0, 0.6);
+    --bs-secondary-bg: #f2f2f2; --bs-tertiary-bg: #f3f3f3; --bs-tertiary-bg-rgb: 243, 243, 243;
+    --bs-border-color: #d9d9d9; --bs-border-color-translucent: rgba(0, 0, 0, 0.08);
+    --bs-primary: #388e3c; --bs-primary-rgb: 56, 142, 60;
+    --bs-link-color: #2e7d32; --bs-link-color-rgb: 46, 125, 50;
+    --bs-link-hover-color: #1f5c23; --bs-link-hover-color-rgb: 31, 92, 35;
+    --fl-titlebar: #f2f2f2;
+    --fl-card: #ffffff; --fl-card-hover: #fcfcfc; --fl-card-border: #d6d6d6;
+    --fl-flyout: #ffffff;
+    --fl-control: #ffffff; --fl-control-hover: #f5f5f5; --fl-control-active: #ececec;
+    --fl-control-border: #d1d1d1; --fl-control-border-strong: #8a8a8a;
+    --fl-accent: #388e3c; --fl-accent-hover: #2f7d33; --fl-accent-active: #276b2b; --fl-accent-fg: #ffffff;
+    --fl-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --fl-shadow-card-hover: 0 6px 18px rgba(0, 0, 0, 0.14);
+    --fl-shadow-flyout: 0 8px 28px rgba(0, 0, 0, 0.18);
+    --fl-scrim: rgba(0, 0, 0, 0.3);
+  }
+
+  /* --- Title bar (the existing tab bar, restyled; same height, same
+     drag-to-reorder behavior) --- */
+  [data-theme^="fluent-"] #tab-bar { background: var(--fl-titlebar); border-bottom: 1px solid var(--bs-border-color); }
+  [data-theme^="fluent-"] .tab-btn {
+    border-right: none; border-radius: 6px 6px 0 0; margin: 6px 1px 0;
+    padding: 0 12px; color: var(--bs-secondary-color);
+  }
+  [data-theme^="fluent-"] .tab-btn:hover { background: var(--fl-control-hover); color: var(--bs-body-color); }
+  [data-theme^="fluent-"] .tab-btn.active-tab {
+    background: var(--bs-body-bg); color: var(--bs-body-color); box-shadow: inset 0 -3px 0 var(--fl-accent);
+  }
+  [data-theme^="fluent-"] .tab-btn.in-split { box-shadow: inset 0 -3px 0 var(--fl-accent); }
+  [data-theme^="fluent-"] .tab-btn.in-split.split-focused-tab { background: var(--bs-body-bg); }
+  [data-theme^="fluent-"] .tab-close { border-radius: 4px; }
+  [data-theme^="fluent-"] #fullscreen-exit-bar { background: var(--fl-flyout); }
+
+  /* --- Page header: big semibold page title, no heavy rule under it --- */
+  [data-theme^="fluent-"] #list-view > header { border-bottom: none !important; padding: 1.5rem 1.5rem 0.5rem !important; }
+  [data-theme^="fluent-"] #list-view > header h1 { font-size: 1.85rem; font-weight: 600; letter-spacing: -0.01em; }
+  [data-theme^="fluent-"] .sticky-toolbar { border-bottom: none; padding-bottom: 14px; }
+  [data-theme^="fluent-"] #whoami { color: var(--bs-secondary-color); }
+
+  /* --- Buttons --- */
+  [data-theme^="fluent-"] .btn { font-weight: 400; border-radius: 4px; transition: background-color 0.1s ease, border-color 0.1s ease, transform 0.1s ease; }
+  [data-theme^="fluent-"] .btn:active { transform: scale(0.98); }
+  [data-theme^="fluent-"] .btn:focus-visible { box-shadow: 0 0 0 2px var(--bs-body-bg), 0 0 0 4px var(--fl-accent); }
+
+  /* Standard controls (the .btn-outline-light used throughout the app) */
+  [data-theme^="fluent-"] .btn-outline-light {
+    --bs-btn-color: var(--bs-body-color); --bs-btn-bg: var(--fl-control); --bs-btn-border-color: var(--fl-control-border);
+    --bs-btn-hover-color: var(--bs-body-color); --bs-btn-hover-bg: var(--fl-control-hover); --bs-btn-hover-border-color: var(--fl-control-border);
+    --bs-btn-active-color: var(--bs-body-color); --bs-btn-active-bg: var(--fl-control-active); --bs-btn-active-border-color: var(--fl-control-border);
+    --bs-btn-disabled-color: var(--bs-secondary-color); --bs-btn-disabled-bg: var(--fl-control); --bs-btn-disabled-border-color: var(--fl-control-border);
+    border-bottom-color: var(--fl-control-border);
+  }
+  /* Accent buttons (Add connection, Save, etc.) */
+  [data-theme^="fluent-"] .btn-primary {
+    --bs-btn-color: var(--fl-accent-fg); --bs-btn-bg: var(--fl-accent); --bs-btn-border-color: var(--fl-accent);
+    --bs-btn-hover-color: var(--fl-accent-fg); --bs-btn-hover-bg: var(--fl-accent-hover); --bs-btn-hover-border-color: var(--fl-accent-hover);
+    --bs-btn-active-color: var(--fl-accent-fg); --bs-btn-active-bg: var(--fl-accent-active); --bs-btn-active-border-color: var(--fl-accent-active);
+    --bs-btn-disabled-color: var(--fl-accent-fg); --bs-btn-disabled-bg: var(--fl-accent); --bs-btn-disabled-border-color: var(--fl-accent);
+    font-weight: 500;
+  }
+  /* The card "Connect" button gets the accent treatment, like RAWeb's
+     green Connect buttons. Selected by its existing data attribute, so
+     no markup changes are needed. */
+  [data-theme^="fluent-"] .btn[data-connect] {
+    --bs-btn-color: var(--fl-accent-fg); --bs-btn-bg: var(--fl-accent); --bs-btn-border-color: var(--fl-accent);
+    --bs-btn-hover-color: var(--fl-accent-fg); --bs-btn-hover-bg: var(--fl-accent-hover); --bs-btn-hover-border-color: var(--fl-accent-hover);
+    --bs-btn-active-color: var(--fl-accent-fg); --bs-btn-active-bg: var(--fl-accent-active); --bs-btn-active-border-color: var(--fl-accent-active);
+    font-weight: 500;
+  }
+
+  /* --- Connection cards --- */
+  [data-theme^="fluent-"] .card {
+    --bs-card-bg: var(--fl-card); --bs-card-border-color: var(--fl-card-border);
+    --bs-card-cap-bg: var(--fl-card); --bs-card-border-radius: 8px; --bs-card-inner-border-radius: 7px;
+    border-radius: 8px;
+  }
+  [data-theme^="fluent-"] #rows .card { box-shadow: var(--fl-shadow-card); }
+  [data-theme^="fluent-"] #rows .card:hover { background: var(--fl-card-hover); box-shadow: var(--fl-shadow-card-hover); }
+  [data-theme^="fluent-"] #rows .card-body { padding: 14px 16px 16px; }
+  [data-theme^="fluent-"] #rows .card-title { font-size: 1.05rem; font-weight: 600; }
+  [data-theme^="fluent-"] .thumbnail-box { background: var(--bs-secondary-bg); border-bottom: none; border-radius: 7px 7px 0 0; }
+  [data-theme^="fluent-"] #rows.select-mode .card.selected { outline-color: var(--fl-accent); }
+
+  /* Tags */
+  [data-theme^="fluent-"] .badge { border-radius: 4px; font-weight: 500; letter-spacing: 0.01em; }
+  [data-theme^="fluent-"] .badge.text-bg-secondary {
+    background-color: var(--fl-control) !important; color: var(--bs-secondary-color) !important;
+    border: 1px solid var(--fl-control-border);
+  }
+
+  /* --- Form controls: WinUI-style, with the accent on the bottom edge when focused --- */
+  [data-theme^="fluent-"] .form-control,
+  [data-theme^="fluent-"] .form-select {
+    background-color: var(--fl-control); border: 1px solid var(--fl-control-border);
+    border-bottom-color: var(--fl-control-border-strong); border-radius: 4px; color: var(--bs-body-color);
+  }
+  [data-theme^="fluent-"] .form-control::placeholder { color: var(--bs-secondary-color); opacity: 0.8; }
+  [data-theme^="fluent-"] .form-control:hover,
+  [data-theme^="fluent-"] .form-select:hover { background-color: var(--fl-control-hover); }
+  [data-theme^="fluent-"] .form-control:focus,
+  [data-theme^="fluent-"] .form-select:focus {
+    background-color: var(--fl-control); color: var(--bs-body-color);
+    border-color: var(--fl-control-border); border-bottom-color: var(--fl-accent);
+    box-shadow: inset 0 -1px 0 var(--fl-accent);
+  }
+  [data-theme^="fluent-"] .form-check-input { background-color: var(--fl-control); border-color: var(--fl-control-border-strong); }
+  [data-theme^="fluent-"] .form-check-input:checked { background-color: var(--fl-accent); border-color: var(--fl-accent); }
+  [data-theme^="fluent-"] .form-check-input:focus { border-color: var(--fl-accent); box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25); }
+  [data-theme="fluent-dark"] .form-check-input:checked[type="checkbox"] {
+    --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%230b2a0d' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+  }
+  [data-theme="fluent-dark"] .form-check-input:checked[type="radio"] {
+    --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230b2a0d'/%3e%3c/svg%3e");
+  }
+
+  /* --- Dialogs: acrylic-style scrim, rounded card, semibold title --- */
+  [data-theme^="fluent-"] .app-overlay { background: var(--fl-scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  [data-theme^="fluent-"] .app-overlay .card { --bs-card-bg: var(--fl-flyout); box-shadow: var(--fl-shadow-flyout); }
+  [data-theme^="fluent-"] .app-overlay .card-title { font-weight: 600; font-size: 1.15rem; }
+  [data-theme^="fluent-"] .app-panel-footer { background: var(--fl-flyout); border-top-color: var(--bs-border-color); }
+
+  /* --- Flyout menus and popovers --- */
+  [data-theme^="fluent-"] .card-dropdown-style,
+  [data-theme^="fluent-"] #specs-popover,
+  [data-theme^="fluent-"] #reachability-history-popover {
+    background: var(--fl-flyout); border-color: var(--fl-card-border); border-radius: 8px; box-shadow: var(--fl-shadow-flyout);
+  }
+  [data-theme^="fluent-"] .card-dropdown-style { padding: 4px; min-width: 160px; }
+  [data-theme^="fluent-"] .card-dropdown-style button { border-radius: 4px; padding: 7px 10px; }
+  [data-theme^="fluent-"] .card-dropdown-style button:hover { background: var(--fl-control-hover); }
+  [data-theme^="fluent-"] .card-dropdown-style button.text-danger:hover { background: var(--bs-danger); color: #fff; }
+
+  /* --- Command palette --- */
+  [data-theme^="fluent-"] .command-palette-row { border-radius: 4px; }
+  [data-theme^="fluent-"] .command-palette-row.selected { background: var(--fl-accent); color: var(--fl-accent-fg); }
+  [data-theme^="fluent-"] .command-palette-input { background: transparent; box-shadow: none; }
+  [data-theme^="fluent-"] .command-palette-input:focus { box-shadow: none; }
+
+  /* --- Tables (admin panel, audit log, etc.) --- */
+  [data-theme^="fluent-"] .table {
+    --bs-table-bg: transparent; --bs-table-border-color: var(--bs-border-color);
+    --bs-table-hover-bg: var(--fl-control-hover); --bs-table-hover-color: var(--bs-body-color);
+  }
+
+  /* --- Small details --- */
+  [data-theme^="fluent-"] .bulk-action-bar,
+  [data-theme^="fluent-"] #bulk-action-bar { border: 1px solid var(--bs-border-color); }
+  [data-theme^="fluent-"] .alert { border-radius: 8px; }
+  [data-theme^="fluent-"] .progress { border-radius: 4px; background: var(--fl-control); }
+  [data-theme^="fluent-"] .progress-bar { background-color: var(--fl-accent); }
+  [data-theme^="fluent-"] ::selection { background: rgba(var(--bs-primary-rgb), 0.35); }
+  /* Slim, Fluent-style scrollbars (WebKit/Blink and Firefox) */
+  [data-theme^="fluent-"] * { scrollbar-width: thin; scrollbar-color: var(--fl-control-border-strong) transparent; }
+  [data-theme^="fluent-"] *::-webkit-scrollbar { width: 10px; height: 10px; }
+  [data-theme^="fluent-"] *::-webkit-scrollbar-thumb { background: var(--fl-control-border-strong); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+  [data-theme^="fluent-"] *::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
@@ -736,6 +939,8 @@
           <option value="win11">Windows 11</option>
           <option value="win10">Windows 10</option>
           <option value="winxp">Windows XP</option>
+          <option value="fluent-dark">Fluent Dark</option>
+          <option value="fluent-light">Fluent Light</option>
         </select>
         <div class="form-text">Applies immediately, and is remembered for your account on any device.</div>
       </div>
@@ -4042,7 +4247,7 @@ let currentIdleTimeoutMinutes = 60;
 // inline script at the top of the page can use it on the very next load,
 // before any server round-trip completes.
 function applyTheme(theme) {
-  const bsBase = theme === 'dark' ? 'dark' : 'light'; // Windows-style themes are built on a light Bootstrap base with overrides layered on top
+  const bsBase = (theme === 'dark' || theme === 'fluent-dark') ? 'dark' : 'light'; // Windows-style themes are built on a light Bootstrap base with overrides layered on top
   document.documentElement.setAttribute('data-bs-theme', bsBase);
   document.documentElement.setAttribute('data-theme', theme);
   try { localStorage.setItem('theme', theme); } catch (err) { /* private browsing, storage disabled, etc. */ }
