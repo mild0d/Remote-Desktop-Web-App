@@ -1953,18 +1953,56 @@ document.getElementById('cancel-btn').addEventListener('click', closeModal);
 
 const cardDropdownMenu = document.getElementById('card-dropdown-menu');
 let cardDropdownConnectionId = null;
+let cardDropdownTrigger = null;
 
 function closeCardDropdown() {
   cardDropdownMenu.classList.remove('show');
   cardDropdownConnectionId = null;
+  cardDropdownTrigger = null;
   // Reset to the main view so a dropdown left mid-drill-down (Tools ▸)
   // doesn't reopen on some other card still showing the tools list.
   document.getElementById('card-dropdown-main-view').classList.remove('d-none');
   document.getElementById('card-dropdown-tools-view').classList.add('d-none');
 }
 
+// Places the (fixed-position) dropdown next to its trigger button without
+// letting it run off the bottom of the screen: below the button when it
+// fits, otherwise flipped above it, and as a last resort (a very short
+// window) on whichever side has more room, scrolling inside the menu.
+// Must be called after the menu is visible, since it measures the menu's
+// real height - and again whenever that height changes (the Tools
+// submenu is much taller than the main menu).
+function positionCardDropdown() {
+  if (!cardDropdownTrigger) return;
+  const margin = 8;
+  const rect = cardDropdownTrigger.getBoundingClientRect();
+  cardDropdownMenu.style.maxHeight = '';
+  cardDropdownMenu.style.overflowY = '';
+  const height = cardDropdownMenu.offsetHeight;
+  const spaceBelow = window.innerHeight - rect.bottom - margin;
+  const spaceAbove = rect.top - margin;
+
+  let top;
+  if (height <= spaceBelow) {
+    top = rect.bottom + 4;
+  } else if (height <= spaceAbove) {
+    top = rect.top - height - 4;
+  } else if (spaceBelow >= spaceAbove) {
+    cardDropdownMenu.style.maxHeight = `${Math.max(spaceBelow, 120)}px`;
+    cardDropdownMenu.style.overflowY = 'auto';
+    top = rect.bottom + 4;
+  } else {
+    const capped = Math.max(spaceAbove, 120);
+    cardDropdownMenu.style.maxHeight = `${capped}px`;
+    cardDropdownMenu.style.overflowY = 'auto';
+    top = Math.max(margin, rect.top - capped - 4);
+  }
+  cardDropdownMenu.style.top = `${top}px`;
+}
+
 function openCardDropdown(triggerButton, connectionId) {
   cardDropdownConnectionId = connectionId;
+  cardDropdownTrigger = triggerButton;
   const conn = currentConns.find((c) => String(c.id) === String(connectionId));
   const isRdp = Boolean(conn) && (conn.protocol || 'rdp') === 'rdp';
   document.getElementById('card-dropdown-tools-btn').classList.toggle('d-none', !isRdp);
@@ -1974,20 +2012,22 @@ function openCardDropdown(triggerButton, connectionId) {
   // ancestor - this is what actually escapes the grid container's
   // overflow-y:auto clipping, rather than being nested inside a card that
   // the container can clip regardless of the dropdown's own z-index.
-  cardDropdownMenu.style.top = `${rect.bottom + 4}px`;
   cardDropdownMenu.style.left = 'auto';
   cardDropdownMenu.style.right = `${window.innerWidth - rect.right}px`;
   cardDropdownMenu.classList.add('show');
+  positionCardDropdown();
 }
 
 document.getElementById('card-dropdown-tools-btn').addEventListener('click', () => {
   document.getElementById('card-dropdown-main-view').classList.add('d-none');
   document.getElementById('card-dropdown-tools-view').classList.remove('d-none');
+  positionCardDropdown();
 });
 
 document.getElementById('card-dropdown-tools-back-btn').addEventListener('click', () => {
   document.getElementById('card-dropdown-tools-view').classList.add('d-none');
   document.getElementById('card-dropdown-main-view').classList.remove('d-none');
+  positionCardDropdown();
 });
 
 document.getElementById('card-dropdown-tools-view').addEventListener('click', (e) => {
