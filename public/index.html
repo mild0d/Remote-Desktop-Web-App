@@ -156,6 +156,20 @@
     background: var(--bs-body-bg); border-top: 1px solid var(--bs-border-color);
   }
 
+  /* Shared drive file list: a long file name with no spaces (a hash-style
+     name, a long .zip, etc.) used to stretch the table wider than the
+     dialog, which caused a horizontal scrollbar and pushed the Download/
+     Delete buttons out of view. A fixed-layout table stays exactly as wide
+     as the dialog; long names wrap onto extra lines instead (anywhere,
+     since there may be no spaces to wrap at), and the size and buttons
+     stay on one line. */
+  #files-modal-backdrop .table { table-layout: fixed; width: 100%; }
+  #files-modal-backdrop .table th:nth-child(2) { width: 5.5rem; }
+  #files-modal-backdrop .table th:nth-child(3) { width: 11rem; }
+  #files-modal-backdrop .table td:first-child { overflow-wrap: anywhere; word-break: break-word; }
+  #files-modal-backdrop .table td:nth-child(2),
+  #files-modal-backdrop .table td:nth-child(3) { white-space: nowrap; }
+
   /* Keeps the sort/add-connection toolbar visible while scrolling through
      a long grid of connection cards, using the same bounded-scroll-
      container pattern as the session display area above - sticky
@@ -1343,7 +1357,7 @@
 </div>
 
 <div class="app-overlay" id="files-modal-backdrop">
-  <div class="card" style="width: 520px; max-width: 90vw;">
+  <div class="card" style="width: 640px; max-width: 90vw;">
     <div class="card-body">
       <h2 class="h5 card-title">Shared drive</h2>
       <p class="text-secondary small">
